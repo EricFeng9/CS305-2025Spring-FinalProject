@@ -7,12 +7,11 @@ import time
 import traceback
 from peer_discovery import start_peer_discovery, known_peers, peer_flags, peer_config
 from block_handler import block_generation, request_block_sync
-from message_handler import cleanup_seen_messages
+from message_handler import dispatch_message
 from socket_server import start_socket_server
 from dashboard import start_dashboard
 from peer_manager import start_peer_monitor, start_ping_loop
-from outbox import send_from_queue
-from link_simulator import start_dynamic_capacity_adjustment
+from outbox import start_dynamic_capacity_adjustment, send_from_queue
 from inv_message import broadcast_inventory
 from transaction import transaction_generation
 
@@ -42,8 +41,10 @@ def main():
     }
 
     for peer_id, peer_info in config["peers"].items():
-        known_peers[peer_id] = (peer_info["ip"], peer_info["port"])
-        peer_config = config["peers"]
+        if peer_id != self_id:  # 不将自己添加到已知节点
+            known_peers.add(peer_id)
+        
+    peer_config.update(config["peers"])
 
     if args.fanout:
         peer_config[self_id]["fanout"] = args.fanout
@@ -54,17 +55,17 @@ def main():
 
     # Start socket and listen for incoming messages
     print(f"[{self_id}] Starting socket server on {ip}:{port}", flush=True)
-    start_socket_server(self_id, ip, port)
+    start_socket_server(ip, int(port), self_id)
 
     # Peer Discovery
     print(f"[{self_id}] Starting peer discovery", flush=True)
-    start_peer_discovery(self_id, self_info)
+    start_peer_discovery(self_id, ip, port, peer_flags[self_id], known_peers)
 
     print(f"[{self_id}] Starting ping loop", flush=True)
-    start_ping_loop(self_id, known_peers)
+    start_ping_loop(self_id)
 
     print(f"[{self_id}] Starting peer monitor", flush=True)
-    start_peer_monitor()
+    start_peer_monitor(self_id)
 
     # Block and Transaction Generation and Verification
     print(f"[{self_id}] Starting block sync thread", flush=True)
@@ -80,7 +81,7 @@ def main():
 
     # Sending Message Processing
     print(f"[{self_id}] Starting outbound queue", flush=True)
-    send_from_queue(self_id)
+    send_from_queue()
 
     print(f"[{self_id}] Starting dynamic capacity adjustment", flush=True)
     start_dynamic_capacity_adjustment()

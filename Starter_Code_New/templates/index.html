@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>区块链网络仪表盘 - 节点 {{ peer_id }}</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        h1, h2 {
+            color: #333;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        .panel {
+            background-color: white;
+            border-radius: 8px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.12);
+            margin-bottom: 20px;
+            padding: 15px;
+        }
+        .panel-header {
+            border-bottom: 1px solid #eee;
+            padding-bottom: 10px;
+            margin-bottom: 15px;
+            font-weight: bold;
+        }
+        .row {
+            display: flex;
+            flex-wrap: wrap;
+            margin: 0 -10px;
+        }
+        .col {
+            flex: 1;
+            padding: 0 10px;
+            min-width: 300px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        th, td {
+            padding: 8px;
+            text-align: left;
+            border-bottom: 1px solid #ddd;
+        }
+        th {
+            background-color: #f2f2f2;
+        }
+        .status-alive {
+            color: green;
+            font-weight: bold;
+        }
+        .status-unreachable {
+            color: red;
+        }
+        .chart {
+            height: 250px;
+            background-color: #f9f9f9;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>区块链网络仪表盘 - 节点 {{ peer_id }}</h1>
+
+        <div class="row">
+            <div class="col">
+                <div class="panel" id="peers-panel">
+                    <div class="panel-header">已知节点</div>
+                    <div id="peers-content">加载中...</div>
+                </div>
+            </div>
+            
+            <div class="col">
+                <div class="panel" id="latency-panel">
+                    <div class="panel-header">传输延迟</div>
+                    <div id="latency-content">加载中...</div>
+                    <div class="chart" id="latency-chart"></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="row">
+            <div class="col">
+                <div class="panel" id="transactions-panel">
+                    <div class="panel-header">交易池</div>
+                    <div id="transactions-content">加载中...</div>
+                </div>
+            </div>
+
+            <div class="col">
+                <div class="panel" id="blockchain-panel">
+                    <div class="panel-header">区块链</div>
+                    <div id="blockchain-content">加载中...</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="row">
+            <div class="col">
+                <div class="panel" id="orphan-panel">
+                    <div class="panel-header">孤块</div>
+                    <div id="orphan-content">加载中...</div>
+                </div>
+            </div>
+
+            <div class="col">
+                <div class="panel" id="redundancy-panel">
+                    <div class="panel-header">消息冗余</div>
+                    <div id="redundancy-content">加载中...</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 定时刷新数据
+        function fetchData() {
+            fetch('/peers').then(response => response.json()).then(data => {
+                updatePeersPanel(data);
+            }).catch(error => console.error('Error fetching peers:', error));
+            
+            fetch('/latency').then(response => response.json()).then(data => {
+                updateLatencyPanel(data);
+            }).catch(error => console.error('Error fetching latency:', error));
+            
+            fetch('/transactions').then(response => response.json()).then(data => {
+                updateTransactionsPanel(data);
+            }).catch(error => console.error('Error fetching transactions:', error));
+            
+            fetch('/blocks').then(response => response.json()).then(data => {
+                updateBlockchainPanel(data);
+            }).catch(error => console.error('Error fetching blockchain:', error));
+            
+            fetch('/orphan').then(response => response.json()).then(data => {
+                updateOrphanPanel(data);
+            }).catch(error => console.error('Error fetching orphan blocks:', error));
+            
+            fetch('/redundancy').then(response => response.json()).then(data => {
+                updateRedundancyPanel(data);
+            }).catch(error => console.error('Error fetching redundancy:', error));
+        }
+
+        function updatePeersPanel(data) {
+            let content = '<table><tr><th>节点ID</th><th>状态</th><th>RTT (ms)</th></tr>';
+            for (const [peerId, info] of Object.entries(data)) {
+                const status = info.status || 'UNKNOWN';
+                const statusClass = status === 'ALIVE' ? 'status-alive' : 'status-unreachable';
+                const rtt = info.rtt ? (info.rtt * 1000).toFixed(2) : '-';
+                content += `<tr>
+                    <td>${peerId}</td>
+                    <td class="${statusClass}">${status}</td>
+                    <td>${rtt}</td>
+                </tr>`;
+            }
+            content += '</table>';
+            document.getElementById('peers-content').innerHTML = content;
+        }
+
+        function updateLatencyPanel(data) {
+            let content = '<table><tr><th>节点ID</th><th>延迟 (ms)</th></tr>';
+            Object.entries(data).forEach(([peerId, latency]) => {
+                content += `<tr>
+                    <td>${peerId}</td>
+                    <td>${(latency * 1000).toFixed(2)}</td>
+                </tr>`;
+            });
+            content += '</table>';
+            document.getElementById('latency-content').innerHTML = content;
+        }
+
+        function updateTransactionsPanel(data) {
+            if (data.length === 0) {
+                document.getElementById('transactions-content').innerHTML = '没有待处理的交易';
+                return;
+            }
+            
+            let content = '<table><tr><th>交易ID</th><th>发送者</th><th>接收者</th><th>金额</th></tr>';
+            data.forEach(tx => {
+                content += `<tr>
+                    <td>${tx.tx_id || '-'}</td>
+                    <td>${tx.sender || '-'}</td>
+                    <td>${tx.receiver || '-'}</td>
+                    <td>${tx.amount || '-'}</td>
+                </tr>`;
+            });
+            content += '</table>';
+            document.getElementById('transactions-content').innerHTML = content;
+        }
+
+        function updateBlockchainPanel(data) {
+            if (data.length === 0) {
+                document.getElementById('blockchain-content').innerHTML = '区块链为空';
+                return;
+            }
+            
+            let content = '<table><tr><th>区块ID</th><th>高度</th><th>前一区块</th><th>交易数</th></tr>';
+            data.forEach(block => {
+                content += `<tr>
+                    <td>${block.block_id || '-'}</td>
+                    <td>${block.height || '-'}</td>
+                    <td>${block.prev_block_id || '-'}</td>
+                    <td>${block.tx_count || '-'}</td>
+                </tr>`;
+            });
+            content += '</table>';
+            document.getElementById('blockchain-content').innerHTML = content;
+        }
+
+        function updateOrphanPanel(data) {
+            if (data.length === 0) {
+                document.getElementById('orphan-content').innerHTML = '没有孤块';
+                return;
+            }
+            
+            let content = '<table><tr><th>区块ID</th><th>前一区块</th></tr>';
+            data.forEach(block => {
+                content += `<tr>
+                    <td>${block.block_id || '-'}</td>
+                    <td>${block.prev_block_id || '-'}</td>
+                </tr>`;
+            });
+            content += '</table>';
+            document.getElementById('orphan-content').innerHTML = content;
+        }
+
+        function updateRedundancyPanel(data) {
+            let content = '<table><tr><th>消息ID</th><th>冗余次数</th></tr>';
+            Object.entries(data).forEach(([msgId, count]) => {
+                content += `<tr>
+                    <td>${msgId}</td>
+                    <td>${count}</td>
+                </tr>`;
+            });
+            content += '</table>';
+            document.getElementById('redundancy-content').innerHTML = content;
+        }
+
+        // 初始加载
+        fetchData();
+        // 每5秒刷新一次
+        setInterval(fetchData, 5000);
+    </script>
+</body>
+</html>
