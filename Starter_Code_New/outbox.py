@@ -116,7 +116,7 @@ def enqueue_message(target_id, ip, port, message):
     
     # 将消息加入队列
     with lock:
-        queues[target_id][priority].append((message, time.time()))
+        queues[target_id][priority].append((message, ip, port, time.time()))
     return True
 
 
@@ -187,7 +187,7 @@ def send_from_queue(self_id):
                 with lock:
                     for priority in sorted(queues[target_id].keys()):
                         if queues[target_id][priority]:
-                            message, enqueue_time = queues[target_id][priority].popleft()
+                            message, ip, port, enqueue_time = queues[target_id][priority].popleft()
                             break
                 
                 if not message:
@@ -210,7 +210,7 @@ def send_from_queue(self_id):
                         # 重新入队，但降低优先级
                         priority = classify_priority(message) + 1 #数字越小优先级越小
                         with lock:
-                            queues[target_id][priority].append((message, time.time()))
+                            queues[target_id][priority].append((message, ip, port, time.time()))
                         logger.debug(f"重试发送消息到 {target_id}，尝试次数: {retries[target_id]}")
                     else:
                         logger.warning(f"发送到 {target_id} 的消息已达最大重试次数，放弃发送")
@@ -261,9 +261,6 @@ def relay_or_direct_send(self_id, dst_id, message):
         else:
             logger.warning(f"找不到节点 {dst_id} 的中继节点")
             return False
-    
-    
-    
     
     # If the target peer is non-NATed, send the message to the target peer using the function `send_message`.
     else:
