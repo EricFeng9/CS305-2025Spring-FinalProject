@@ -87,8 +87,10 @@ def add_transaction(tx):
 
 def get_recent_transactions():
     # TODO: Return all transactions in the local `tx_pool`
+    transaction_ids = []
     for tx in tx_pool:
-        return tx.to_dict()
+        transaction_ids.append(tx.to_dict())
+    return transaction_ids
 
 def clear_pool():
     # Remove all transactions in `tx_pool` and transaction IDs in `tx_ids`.
