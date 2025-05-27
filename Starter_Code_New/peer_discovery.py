@@ -32,7 +32,7 @@ def start_peer_discovery(self_id, self_info):
         msg_str = json.dumps(msg) + "\n"
 
         for peer_id, (peer_ip, peer_port) in known_peers.items():
-            enqueue_message(peer_id, msg_str)
+            enqueue_message(peer_id, peer_ip, peer_port, msg_str)
 
     threading.Thread(target=loop, daemon=True).start()
 
