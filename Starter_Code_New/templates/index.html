@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>区块链节点仪表盘</title>
+    <style>
+        .css-test-element {
+            display: none;
+            background-color: red;
+        }
+        body::before {
+            content: "CSS文件未加载";
+            color: red;
+            font-weight: bold;
+            display: block;
+            padding: 10px;
+            background: #ffcccc;
+            margin-bottom: 10px;
+        }
+    </style>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+    <style>
+        body::before {
+            display: none;
+        }
+    </style>
+    <script src="{{ url_for('static', filename='dashboard.js') }}" defer></script>
+</head>
+<body>
+    <header>
+        <h1>区块链节点仪表盘</h1>
+        <div class="node-info">
+            <span>节点ID: <strong id="peer-id">{{ peer_id }}</strong></span>
+            <span>发送容量: <strong id="capacity">加载中...</strong></span>
+            <span id="js-test">JS未加载</span>
+        </div>
+    </header>
+
+    <div class="dashboard-grid">
+        <section class="card" id="peers-section">
+            <h2>已知节点</h2>
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>节点ID</th>
+                            <th>IP地址</th>
+                            <th>端口</th>
+                            <th>状态</th>
+                            <th>NAT</th>
+                            <th>轻量级</th>
+                        </tr>
+                    </thead>
+                    <tbody id="peers-table">
+                        <tr><td colspan="6" class="empty-state">加载中...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <section class="card" id="blocks-section">
+            <h2>区块链</h2>
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>区块ID</th>
+                            <th>前置区块ID</th>
+                            <th>高度</th>
+                            <th>时间戳</th>
+                            <th>交易数量</th>
+                        </tr>
+                    </thead>
+                    <tbody id="blocks-table">
+                        <tr><td colspan="5" class="empty-state">加载中...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <section class="card" id="orphan-blocks-section">
+            <h2>孤立区块</h2>
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>区块ID</th>
+                            <th>前置区块ID</th>
+                            <th>时间戳</th>
+                        </tr>
+                    </thead>
+                    <tbody id="orphan-blocks-table">
+                        <tr><td colspan="3" class="empty-state">加载中...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <section class="card" id="transactions-section">
+            <h2>交易池</h2>
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>交易ID</th>
+                            <th>发送方</th>
+                            <th>接收方</th>
+                            <th>金额</th>
+                            <th>时间戳</th>
+                        </tr>
+                    </thead>
+                    <tbody id="transactions-table">
+                        <tr><td colspan="5" class="empty-state">加载中...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <section class="card" id="latency-section">
+            <h2>节点延迟</h2>
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>节点ID</th>
+                            <th>延迟(ms)</th>
+                        </tr>
+                    </thead>
+                    <tbody id="latency-table">
+                        <tr><td colspan="2" class="empty-state">加载中...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <section class="card" id="redundancy-section">
+            <h2>冗余消息统计</h2>
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>消息ID</th>
+                            <th>重复次数</th>
+                        </tr>
+                    </thead>
+                    <tbody id="redundancy-table">
+                        <tr><td colspan="2" class="empty-state">加载中...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+        
+        <section class="card" id="blacklist-section">
+            <h2>黑名单节点</h2>
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>节点ID</th>
+                        </tr>
+                    </thead>
+                    <tbody id="blacklist-table">
+                        <tr><td class="empty-state">加载中...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+        
+        <section class="card" id="network-stats-section">
+            <h2>网络统计</h2>
+            <div class="stats-container" id="network-stats-content">
+                <div class="empty-state">加载中...</div>
+            </div>
+        </section>
+    </div>
+
+    <footer>
+        <p>区块链P2P网络模拟 | 最后更新: <span id="last-updated"></span></p>
+    </footer>
+
+    <script>
+    document.addEventListener('DOMContentLoaded', function() {
+        document.getElementById('js-test').textContent = "页面已加载，但dashboard.js可能未加载";
+        console.log('内联脚本已执行');
+    });
+    </script>
+</body>
+</html> 
