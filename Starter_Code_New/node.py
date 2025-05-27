@@ -12,7 +12,7 @@ from socket_server import start_socket_server
 from dashboard import start_dashboard
 from peer_manager import start_peer_monitor, start_ping_loop
 from outbox import send_from_queue
-from link_simulator import start_dynamic_capacity_adjustment
+from outbox import start_dynamic_capacity_adjustment #fjm : 修改成outbox
 from inv_message import broadcast_inventory
 from transaction import transaction_generation
 

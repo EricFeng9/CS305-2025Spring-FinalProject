@@ -46,7 +46,7 @@ sys.modules['block_handler'].orphan_blocks = []
 sys.modules['block_handler'].is_lightweight = False
 
 # 现在导入仪表盘模块
-from dashboard import app
+from Starter_Code_New.dashboard import app
 
 if __name__ == '__main__':
     # 默认使用7000端口，也可以通过命令行参数指定
