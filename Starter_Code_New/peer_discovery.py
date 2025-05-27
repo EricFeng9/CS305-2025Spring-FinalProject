@@ -16,7 +16,24 @@ def start_peer_discovery(self_id, self_info):
         # The `message ID` can be a random number.
 
         # TODO: Send a `hello` message to all known peers and put the messages into the outbox queue.
-        pass
+
+        msg = {
+            "type": "HELLO",
+            "sender_id": self_id,
+            "ip": self_info["ip"],
+            "port": self_info["port"],
+            "flags": {
+                "nat": self_info.get("nat", False),
+                "light": self_info.get("light", False)
+            },
+            "message_id": generate_message_id()
+        }
+
+        msg_str = json.dumps(msg) + "\n"
+
+        for peer_id, (peer_ip, peer_port) in known_peers.items():
+            enqueue_message(peer_id, msg_str)
+
     threading.Thread(target=loop, daemon=True).start()
 
 def handle_hello_message(msg, self_id):
@@ -28,7 +45,31 @@ def handle_hello_message(msg, self_id):
      
     # TODO: Update the set of reachable peers (`reachable_by`).
 
-    pass
+    new_peers = []
+
+    sender_id = msg.get("sender_id")
+    sender_ip = msg.get("ip")
+    sender_port = msg.get("port")
+    sender_flags = msg.get("flags", {})
+
+    # 不处理自己的HELLO
+    if sender_id == self_id:
+        return []
+
+    # 添加到已知节点表
+    if sender_id not in known_peers:
+        known_peers[sender_id] = (sender_ip, sender_port)
+        peer_flags[sender_id] = {
+            "nat": sender_flags.get("nat", False),
+            "light": sender_flags.get("light", False)
+        }
+        new_peers.append(sender_id)
+
+    # 可达性更新
+    if sender_id not in reachable_by:
+        reachable_by[sender_id] = set()
+
+    reachable_by[sender_id].add(self_id)
 
     return new_peers 
 
