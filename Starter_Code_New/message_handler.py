@@ -11,6 +11,7 @@ from block_handler import create_getblock
 from peer_manager import  update_peer_heartbeat, record_offense, create_pong, handle_pong
 from transaction import add_transaction
 from outbox import enqueue_message, gossip_message
+from utils import generate_message_id
 import logging
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -21,7 +22,7 @@ seen_message_ids = {}
 seen_txs = set()
 redundant_blocks = 0
 redundant_txs = 0
-message_redundancy = 0
+message_redundancy = {}
 peer_inbound_timestamps = defaultdict(list)
 
 
@@ -50,21 +51,17 @@ def is_inbound_limited(peer_id):
 def get_redundancy_stats():
     # Return the times of receiving duplicated messages (`message_redundancy`).
     """返回重复消息次数的统计信息"""
-    return dict(message_redundancy)
+    return message_redundancy
 
 # === Main Message Dispatcher ===
 def dispatch_message(msg, self_id, self_ip):
     """处理接收到的消息"""
-    msg_type = msg.get["type"]
-    
-    
-    # Read the message.
+    msg_type = msg.get("type")
     
     # 消息合法性检查
     if not msg_type:
         logger.warning(f"收到无类型消息: {msg}")
         return
-    
     
     #  Check if the message has been seen in `seen_message_ids` to prevent replay attacks. 
     # If yes, drop the message and add one to `message_redundancy`. 
@@ -74,7 +71,7 @@ def dispatch_message(msg, self_id, self_ip):
     current_time = time.time()
     if msg_id in seen_message_ids:
             if current_time - seen_message_ids[msg_id] < SEEN_EXPIRY_SECONDS:
-                message_redundancy[msg_id] += 1
+                message_redundancy[msg_id] = message_redundancy.get(msg_id, 0) + 1
                 return
     # 记录消息ID和时间戳
     seen_message_ids[msg_id] = current_time
@@ -138,10 +135,10 @@ def dispatch_message(msg, self_id, self_ip):
         # Call the function `create_inv` to create an `INV` message for the block.
         # Broadcast the `INV` message to known peers using the function `gossip_message` in `outbox.py`.
             # 创建并广播INV消息
-            from block_handler import create_inv
-            inv_msg = create_inv([block_id], "block", self_id) #（数据标识符列表，数据类型，发送者id）
+            from inv_message import create_inv
+            inv_msg = create_inv(self_id, [block_id])
             from outbox import gossip_message
-            gossip_message(inv_msg, self_id)  
+            gossip_message(self_id, inv_msg)  
             
         #INV消息的工作流程
         #触发条件：当节点验证并接受一个新区块后
@@ -174,7 +171,7 @@ def dispatch_message(msg, self_id, self_ip):
         # Broadcast the transaction to known peers using the function `gossip_message` in `outbox.py`.
                 # 广播交易
                 from outbox import gossip_message
-                gossip_message(self_id,msg)
+                gossip_message(self_id, msg)
 
     elif msg_type == "PING":
         
@@ -211,18 +208,21 @@ def dispatch_message(msg, self_id, self_ip):
         if inv_type == "block":
             from block_handler import get_inventory
             local_blocks = get_inventory()
-        # Compare the local block IDs with those in the message.
-        # 比较并找出缺失的区块
+            # Compare the local block IDs with those in the message.
+            # 比较并找出缺失的区块
             missing_blocks = [block_id for block_id in inventory if block_id not in local_blocks]
                 
-        # If there are missing blocks, create a `GETBLOCK` message to request the missing blocks from the sender.
-        # Send the `GETBLOCK` message to the sender using the function `enqueue_message` in `outbox.py`.
-        if missing_blocks:
-                    # 创建GETBLOCK消息
-                    from block_handler import create_getblock
-                    getblock_msg = create_getblock(self_id,missing_blocks)
-                    from outbox import enqueue_message
-                    enqueue_message(sender_id,known_peers[sender_id][0],known_peers[sender_id][1],getblock_msg)
+            # If there are missing blocks, create a `GETBLOCK` message to request the missing blocks from the sender.
+            # Send the `GETBLOCK` message to the sender using the function `enqueue_message` in `outbox.py`.
+            if missing_blocks and sender_id in known_peers:
+                # 创建GETBLOCK消息
+                from block_handler import create_getblock
+                getblock_msg = create_getblock(self_id, missing_blocks)
+                # 获取发送者的IP和端口
+                sender_ip, sender_port = known_peers[sender_id]
+                # 发送GETBLOCK消息
+                enqueue_message(sender_id, sender_ip, sender_port, getblock_msg)
+                logger.info(f"向节点 {sender_id} 请求缺失的区块: {missing_blocks}")
 
     elif msg_type == "GETBLOCK":
         
@@ -234,7 +234,7 @@ def dispatch_message(msg, self_id, self_ip):
         # If the retry times exceed 3, drop the message.
         # 检查重试次数是否超过上限
         if retry_count >= 3:
-            logger.warning(f"区块请求 {msg.get('id', '未知ID')} 重试次数已达上限 ({retry_count}/3)，放弃处理")
+            logger.warning(f"区块请求 {msg.get('message_id', '未知ID')} 重试次数已达上限 ({retry_count}/3)，放弃处理")
             return
             
         # Get the blocks from the local blockchain according to the block IDs 
@@ -253,7 +253,8 @@ def dispatch_message(msg, self_id, self_ip):
                     "type": "BLOCK",
                     "sender_id": self_id,
                     "block_id": block_id,
-                    "data": block
+                    "data": block,
+                    "message_id": generate_message_id(self_id)
                 }
                 if sender_id in known_peers:
                     sender_ip, sender_port = known_peers[sender_id]
@@ -280,7 +281,6 @@ def dispatch_message(msg, self_id, self_ip):
             getblock_msg = create_getblock(self_id, missing_blocks)
             # 向其他节点发送请求（排除自己）
             request_sent = False
-            from outbox import enqueue_message
             for peer_id, (peer_ip, peer_port) in known_peers.items():
                 if peer_id != self_id and peer_id != sender_id:
                     # 不向自己或原请求者发送
@@ -294,27 +294,21 @@ def dispatch_message(msg, self_id, self_ip):
     elif msg_type == "GET_BLOCK_HEADERS":
         
         # Read all block header in the local blockchain and store them in `headers`.
-        from block_handler import blockchain
-        headers = []
-            
-        for block in blockchain:
-            headers.append({
-                "block_id": block["block_id"],
-                "prev_block_id": block.get("prev_block_id", ""),
-                "height": block.get("height", 0),
-                "timestamp": block.get("timestamp", 0)
-            })
         # Create a `BLOCK_HEADERS` message, which should include `{message type, sender's ID, headers}`.
+        from block_handler import header_store
+        
         # 创建BLOCK_HEADERS消息
         headers_msg = {
             "type": "BLOCK_HEADERS",
             "sender_id": self_id,
-            "headers": headers
+            "headers": header_store
         }
         
         # Send the `BLOCK_HEADERS` message to the requester using the function `enqueue_message` in `outbox.py`.
         from outbox import enqueue_message
-        enqueue_message(sender_id,known_peers[sender_id][0],known_peers[sender_id][1],headers_msg)
+        if sender_id in known_peers:
+            sender_ip, sender_port = known_peers[sender_id]
+            enqueue_message(sender_id, sender_ip, sender_port, headers_msg)
 
     elif msg_type == "BLOCK_HEADERS":
         

@@ -7,7 +7,6 @@ import time
 import traceback
 from peer_discovery import start_peer_discovery, known_peers, peer_flags, peer_config
 from block_handler import block_generation, request_block_sync
-from message_handler import cleanup_seen_messages
 from socket_server import start_socket_server
 from dashboard import start_dashboard
 from peer_manager import start_peer_monitor, start_ping_loop

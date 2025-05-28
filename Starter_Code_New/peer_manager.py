@@ -104,3 +104,37 @@ def record_offense(peer_id):
     peer_offense_counts[peer_id] += 1
     if peer_offense_counts[peer_id] > 3:
         blacklist.add(peer_id)
+
+#--------------------------------
+def get_peer_status():
+    """获取所有节点的状态信息"""
+    from peer_discovery import known_peers, peer_flags
+    
+    status_info = {}
+    # 确保节点ID为字符串类型
+    for peer_id in known_peers:
+        str_peer_id = str(peer_id)
+        status = peer_status.get(str_peer_id, "UNKNOWN")
+        
+        # 获取RTT数据
+        rtt = None
+        if str_peer_id in rtt_tracker and rtt_tracker[str_peer_id]:
+            rtt = sum(rtt_tracker[str_peer_id]) / len(rtt_tracker[str_peer_id])
+            
+        # 获取节点标志
+        flags = peer_flags.get(str_peer_id, {})
+        
+        # 获取违规记录
+        offense_count = peer_offense_counts[peer_id]
+        
+        # 创建节点状态信息
+        status_info[str_peer_id] = {
+            "status": status,
+            "rtt": rtt,
+            "flags": flags,
+            "offenses": offense_count,
+            "blacklisted": str_peer_id in blacklist
+        }
+    
+    return status_info
+

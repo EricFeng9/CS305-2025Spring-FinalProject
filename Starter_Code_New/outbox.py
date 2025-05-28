@@ -83,9 +83,13 @@ rate_limiter = RateLimiter()
 def enqueue_message(target_id, ip, port, message):
     from peer_manager import blacklist, rtt_tracker 
 
-    # TODO: 
-    """将消息放入发送队列"""
-    from peer_manager import blacklist
+    # 检查消息是否为字符串，如果是则转换为字典
+    if isinstance(message, str):
+        try:
+            message = json.loads(message)
+        except json.JSONDecodeError:
+            logger.error(f"无法解析消息字符串为JSON: {message[:100]}")
+            return False
     
     # 检查速率限制
     #Check if the peer sends message to the receiver too frequently using the function `is_rate_limited`. If yes, drop the message.
@@ -422,7 +426,8 @@ def gossip_message(self_id, message, fanout=3):
     for target_peer in target_peers:
         enqueue_message(target_peer,known_peers[target_peer][0],known_peers[target_peer][1],message)
     
-    logger.debug(f"节点 {target_peer} 通过gossip发送了 {message.get('type')} 给 {len(target_peers)} 个节点")
+    if target_peers:
+        logger.debug(f"节点 {self_id} 通过gossip发送了 {message.get('type')} 给 {len(target_peers)} 个节点")
 
 def get_outbox_status():
     # Return the message in the outbox queue.

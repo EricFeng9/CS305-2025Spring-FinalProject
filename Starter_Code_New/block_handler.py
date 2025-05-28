@@ -1,4 +1,3 @@
-
 import time
 import hashlib
 import json
@@ -6,9 +5,9 @@ import threading
 import random
 from transaction import get_recent_transactions, clear_pool
 from peer_discovery import known_peers, peer_config
+from utils import generate_message_id
 
 from outbox import  enqueue_message, gossip_message
-from utils import generate_message_id
 from peer_manager import record_offense
 
 received_blocks = [] # The local blockchain. The blocks are added linearly at the end of the set.
@@ -24,9 +23,8 @@ def request_block_sync(self_id):
         "message_id": generate_message_id(self_id)
     }
     # TODO: Send a `GET_BLOCK_HEADERS` message to each known peer and put the messages in the outbox queue.
-    for peer_id in known_peers.keys():
+    for peer_id, (ip, port) in known_peers.items():
         if peer_id != self_id:
-            ip, port = known_peers[peer_id]
             enqueue_message(peer_id, ip, port, msg)
 
 def block_generation(self_id, MALICIOUS_MODE, interval=20):
@@ -42,10 +40,7 @@ def block_generation(self_id, MALICIOUS_MODE, interval=20):
                 block_ids.append(block["block_id"])
             inv_msg=create_inv(self_id, block_ids)
     # TODO: Broadcast the `INV` message to known peers using the function `gossip` in `outbox.py`.
-            for peer_id in known_peers.keys():
-                if peer_id != self_id:
-                    ip, port = known_peers[peer_id]
-                    gossip_message(self_id, ip, port, inv_msg)
+            gossip_message(self_id, inv_msg)
     threading.Thread(target=mine, daemon=True).start()
 
 #create a dummy block
@@ -154,4 +149,3 @@ def get_inventory():
     for block in received_blocks:
         block_ids.append(block["block_id"])
     return block_ids
-

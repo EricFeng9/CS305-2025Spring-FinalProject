@@ -27,10 +27,7 @@ def broadcast_inventory(self_id):
     # TODO: Create an `INV` message with all block IDs in the local blockchain.
     block_ids = get_inventory()
     inv_msg = create_inv(self_id, block_ids)
-    # TODO: Broadcast the `INV` message to known peers using the function `gossip_message` in `outbox.py` to synchronize the blockchain with known peers.
-    for peer_id in known_peers.keys():
-        if peer_id != self_id:
-            ip, port = known_peers[peer_id]
-            gossip_message(self_id, ip, port, inv_msg)
+    # TODO: Broadcast the `INV` message to known peers using the function `gossip_message` in `outbox.py`.
+    gossip_message(self_id, inv_msg)
 
 

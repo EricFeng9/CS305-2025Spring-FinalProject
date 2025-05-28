@@ -5,9 +5,8 @@ from transaction import get_recent_transactions
 from outbox import rate_limiter, get_outbox_status, get_drop_stats
 from message_handler import get_redundancy_stats
 from peer_discovery import known_peers,peer_flags
-from block_handler import received_blocks
+from block_handler import received_blocks, header_store
 import json
-from block_handler import blockchain
 import time
 import threading
 import logging
@@ -55,7 +54,7 @@ dashboard_data = {
 def start_dashboard(peer_id, port=None):
     global blockchain_data_ref, known_peers_ref, dashboard_data
     dashboard_data["peer_id"] = peer_id
-    blockchain_data_ref = blockchain
+    blockchain_data_ref = received_blocks
     known_peers_ref = known_peers
     
     # 使用节点ID作为环境变量，使其在模板中可访问
@@ -214,24 +213,26 @@ def update_dashboard_data(peer_id):
     dashboard_data["transactions"] = get_recent_transactions()
     
     # 更新区块信息
-    from block_handler import blockchain, block_headers, orphan_blocks, is_lightweight
+    from block_handler import received_blocks, orphan_blocks
+    # 使用header_store代替不存在的block_headers
+    is_lightweight = False
     if is_lightweight:
-        dashboard_data["blocks"] = block_headers
+        dashboard_data["blocks"] = header_store
     else:
         dashboard_data["blocks"] = [{
             "block_id": block["block_id"],
-            "prev_block_id": block["prev_block_id"],
+            "prev_block_id": block.get("previous_block_id", None),
             "height": block.get("height", 0),
             "timestamp": block["timestamp"],
             "tx_count": len(block.get("transactions", []))
-        } for block in blockchain]
+        } for block in received_blocks]
     
     # 更新孤块信息
     dashboard_data["orphan_blocks"] = [{
         "block_id": block["block_id"],
-        "prev_block_id": block["prev_block_id"],
+        "prev_block_id": block.get("previous_block_id", None),
         "timestamp": block["timestamp"]
-    } for block in orphan_blocks]
+    } for block in orphan_blocks.values()]
     
     # 更新传输延迟信息
     from peer_manager import rtt_tracker

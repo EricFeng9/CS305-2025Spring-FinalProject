@@ -69,7 +69,7 @@ def transaction_generation(self_id, interval=15):
                     # TODO:  Add the transaction to local `tx_pool` using the function `add_transaction`.
                     add_transaction(tx)
                     # TODO:  Broadcast the transaction to `known_peers` using the function `gossip_message` in `outbox.py`.
-                    gossip_message(self_id,tx.to_dict())
+                    gossip_message(self_id, tx.to_dict())
             time.sleep(interval)
     threading.Thread(target=loop, daemon=True).start()
 
