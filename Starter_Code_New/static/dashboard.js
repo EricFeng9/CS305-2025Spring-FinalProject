@@ -18,12 +18,119 @@ document.addEventListener('DOMContentLoaded', () => {
     const peerId = document.getElementById('peer-id').textContent;
     console.log(`Dashboard initialized for peer: ${peerId}`);
     
+    // 初始化切换显示的内容区域
+    initTabPanels();
+    
+    // 初始化发送区块模态框
+    initSendBlockModal();
+    
     // 首次加载数据
     refreshAllData();
     
     // 设置定时刷新
     setInterval(refreshAllData, REFRESH_INTERVAL);
 });
+
+// 初始化发送区块模态框
+function initSendBlockModal() {
+    const modal = document.getElementById('send-block-modal');
+    const btn = document.getElementById('open-send-block-modal');
+    const closeBtn = modal.querySelector('.close');
+    const sendBtn = document.getElementById('send-block-btn');
+    const resultDiv = document.getElementById('send-block-result');
+    
+    // 点击按钮打开模态框
+    btn.onclick = function() {
+        modal.style.display = "block";
+        resultDiv.textContent = '';
+        resultDiv.className = 'result-message';
+    }
+    
+    // 点击 × 关闭模态框
+    closeBtn.onclick = function() {
+        modal.style.display = "none";
+    }
+    
+    // 点击模态框外部关闭
+    window.onclick = function(event) {
+        if (event.target == modal) {
+            modal.style.display = "none";
+        }
+    }
+    
+    // 发送区块按钮点击事件
+    sendBtn.onclick = function() {
+        const targetPeerId = document.getElementById('target-peer-id').value.trim();
+        
+        if (!targetPeerId) {
+            resultDiv.textContent = '请输入目标节点ID';
+            resultDiv.className = 'result-message error';
+            return;
+        }
+        
+        // 显示加载状态
+        resultDiv.textContent = '发送中...';
+        resultDiv.className = 'result-message loading';
+        
+        // 调用API发送区块
+        fetch('/api/send_block', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ target_peer_id: targetPeerId })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.status === 'success') {
+                resultDiv.textContent = data.message;
+                resultDiv.className = 'result-message success';
+                // 5秒后自动关闭
+                setTimeout(() => {
+                    modal.style.display = "none";
+                    // 刷新消息列表
+                    fetchMessages();
+                }, 3000);
+            } else {
+                resultDiv.textContent = data.message;
+                resultDiv.className = 'result-message error';
+            }
+        })
+        .catch(error => {
+            resultDiv.textContent = `发送失败: ${error.message}`;
+            resultDiv.className = 'result-message error';
+            console.error('发送区块失败:', error);
+        });
+    }
+}
+
+// 初始化切换显示的内容区域
+function initTabPanels() {
+    // 找到所有标签页面板区域
+    const tabContainers = document.querySelectorAll('.tab-container');
+    
+    tabContainers.forEach(container => {
+        const tabs = container.querySelectorAll('.tab-header .tab');
+        const panels = container.querySelectorAll('.tab-content .tab-panel');
+        
+        // 设置初始状态：第一个标签激活
+        if(tabs.length > 0) tabs[0].classList.add('active');
+        if(panels.length > 0) panels[0].classList.add('active');
+        
+        // 为每个标签添加点击事件
+        tabs.forEach((tab, index) => {
+            tab.addEventListener('click', () => {
+                // 移除所有活动状态
+                tabs.forEach(t => t.classList.remove('active'));
+                panels.forEach(p => p.classList.remove('active'));
+                
+                // 设置当前标签和面板为活动状态
+                tab.classList.add('active');
+                if(panels[index]) panels[index].classList.add('active');
+            });
+        });
+    });
+}
 
 // 刷新所有数据
 function refreshAllData() {
@@ -38,7 +145,8 @@ function refreshAllData() {
         fetchCapacity(),
         fetchRedundancy(),
         fetchBlacklist(),
-        fetchNetworkStats()
+        fetchNetworkStats(),
+        fetchMessages()
     ]).then(() => {
         // 更新最后刷新时间
         const now = new Date();
@@ -56,10 +164,12 @@ function refreshAllData() {
 }
 
 // 截断长ID
-function truncateId(id, length = 8) {
+function truncateId(id, length = 16) {
     if (!id) return '未知';
     if (id.length <= length) return id;
-    return `${id.substring(0, length)}...`;
+    const prefix = id.substring(0, length/2);
+    const suffix = id.substring(id.length - length/2);
+    return `${prefix}...${suffix}`;
 }
 
 // 获取节点信息
@@ -184,10 +294,23 @@ function fetchBlocks() {
             
             data.forEach(block => {
                 const row = document.createElement('tr');
+                
+                // 确保显示区块高度
+                let height = '未知';
+                if (block.height !== undefined && block.height !== null) {
+                    height = block.height;
+                } else if (data.indexOf(block) === 0) {
+                    // 对于第一个区块，如果没有高度，可能是创世区块
+                    height = 0;
+                } else if (data.indexOf(block) > 0) {
+                    // 对于其他区块，可以基于位置估计高度
+                    height = data.indexOf(block);
+                }
+                
                 row.innerHTML = `
-                    <td><span class="truncate-id" title="${block.block_id}">${truncateId(block.block_id)}</span></td>
-                    <td><span class="truncate-id" title="${block.prev_block_id}">${truncateId(block.prev_block_id || '创世区块')}</span></td>
-                    <td>${block.height || '未知'}</td>
+                    <td><span class="blockchain-id" title="${block.block_id}">${truncateId(block.block_id)}</span></td>
+                    <td><span class="blockchain-id" title="${block.prev_block_id}">${truncateId(block.prev_block_id || '创世区块')}</span></td>
+                    <td>${height}</td>
                     <td>${formatTimestamp(block.timestamp)}</td>
                     <td>${block.tx_count || block.transactions?.length || '0'}</td>
                 `;
@@ -220,8 +343,8 @@ function fetchOrphanBlocks() {
             data.forEach(block => {
                 const row = document.createElement('tr');
                 row.innerHTML = `
-                    <td><span class="truncate-id" title="${block.block_id}">${truncateId(block.block_id)}</span></td>
-                    <td><span class="truncate-id" title="${block.prev_block_id}">${truncateId(block.prev_block_id || '未知')}</span></td>
+                    <td><span class="blockchain-id" title="${block.block_id}">${truncateId(block.block_id)}</span></td>
+                    <td><span class="blockchain-id" title="${block.prev_block_id}">${truncateId(block.prev_block_id || '未知')}</span></td>
                     <td>${formatTimestamp(block.timestamp)}</td>
                 `;
                 tableBody.appendChild(row);
@@ -253,9 +376,9 @@ function fetchTransactions() {
             data.forEach(tx => {
                 const row = document.createElement('tr');
                 row.innerHTML = `
-                    <td><span class="truncate-id" title="${tx.id || '未知'}">${truncateId(tx.id || '未知')}</span></td>
-                    <td><span class="truncate-id" title="${tx.from || tx.from_peer || '未知'}">${truncateId(tx.from || tx.from_peer || '未知')}</span></td>
-                    <td><span class="truncate-id" title="${tx.to || tx.to_peer || '未知'}">${truncateId(tx.to || tx.to_peer || '未知')}</span></td>
+                    <td><span class="blockchain-id" title="${tx.id || '未知'}">${truncateId(tx.id || '未知')}</span></td>
+                    <td><span class="blockchain-id" title="${tx.from || tx.from_peer || '未知'}">${truncateId(tx.from || tx.from_peer || '未知', 10)}</span></td>
+                    <td><span class="blockchain-id" title="${tx.to || tx.to_peer || '未知'}">${truncateId(tx.to || tx.to_peer || '未知', 10)}</span></td>
                     <td>${tx.amount || '未知'}</td>
                     <td>${formatTimestamp(tx.timestamp)}</td>
                 `;
@@ -306,7 +429,7 @@ function fetchRedundancy() {
                 }
                 
                 row.innerHTML = `
-                    <td><span class="truncate-id" title="${msgId}">${truncateId(msgId)}</span></td>
+                    <td><span class="blockchain-id" title="${msgId}">${truncateId(msgId, 20)}</span></td>
                     <td>${count}</td>
                 `;
                 tableBody.appendChild(row);
@@ -315,33 +438,85 @@ function fetchRedundancy() {
         .catch(error => console.error('获取冗余信息失败:', error));
 }
 
-// 获取黑名单信息
+// 获取黑名单信息（合并）
 function fetchBlacklist() {
-    return fetch('/api/blacklist')
-        .then(response => response.json())
-        .then(data => {
-            const tableBody = document.getElementById('blacklist-table');
-            tableBody.innerHTML = '';
-            const section = document.getElementById('blacklist-section');
+    // 这里调用合并函数，不直接使用旧的fetchBlacklist功能
+    return fetchCombinedBlacklist();
+}
+
+// 获取合并的黑名单信息
+function fetchCombinedBlacklist() {
+    // 同时获取黑名单和节点黑名单详情
+    return Promise.all([
+        fetch('/api/blacklist').then(response => response.json()),
+        fetch('/api/peer_blacklists').then(response => response.json())
+    ])
+    .then(([blacklist, peerBlacklists]) => {
+        const tableBody = document.getElementById('blacklist-combined-table');
+        tableBody.innerHTML = '';
+        const section = document.getElementById('blacklist-combined-section');
+        
+        // 构建黑名单节点统计
+        const nodeStats = {};
+        
+        // 统计每个节点被拉黑的次数
+        for (const [peerId, blacklistNodes] of Object.entries(peerBlacklists)) {
+            blacklistNodes.forEach(nodeId => {
+                if (!nodeStats[nodeId]) {
+                    nodeStats[nodeId] = { count: 0, blacklistedBy: [] };
+                }
+                nodeStats[nodeId].count++;
+                nodeStats[nodeId].blacklistedBy.push(peerId);
+            });
+        }
+        
+        // 如果本地黑名单和节点黑名单详情都为空
+        if (blacklist.length === 0 && Object.keys(nodeStats).length === 0) {
+            section.classList.add('empty');
+            tableBody.innerHTML = '<tr><td colspan="2" class="empty-state">没有黑名单信息</td></tr>';
+            return;
+        }
+        
+        section.classList.remove('empty');
+        
+        // 添加本地黑名单中的节点（如果未在统计中）
+        blacklist.forEach(nodeId => {
+            if (!nodeStats[nodeId]) {
+                nodeStats[nodeId] = { count: 1, blacklistedBy: ['本节点'] };
+            } else if (!nodeStats[nodeId].blacklistedBy.includes('本节点')) {
+                nodeStats[nodeId].count++;
+                nodeStats[nodeId].blacklistedBy.push('本节点');
+            }
+        });
+        
+        // 更新黑名单节点数量
+        updateCounter('blacklist-combined-section', Object.keys(nodeStats).length);
+        
+        // 按被拉黑次数排序
+        const sortedNodes = Object.entries(nodeStats).sort((a, b) => b[1].count - a[1].count);
+        
+        sortedNodes.forEach(([nodeId, stats]) => {
+            const row = document.createElement('tr');
             
-            if (data.length === 0) {
-                section.classList.add('empty');
-                tableBody.innerHTML = '<tr><td class="empty-state">没有黑名单节点</td></tr>';
-                return;
+            // 高亮显示被多个节点拉黑的节点
+            if (stats.count > 2) {
+                row.classList.add('highlight-row');
             }
             
-            section.classList.remove('empty');
-            
-            // 更新黑名单数量
-            updateCounter('blacklist-section', data.length);
-            
-            data.forEach(peerId => {
-                const row = document.createElement('tr');
-                row.innerHTML = `<td>${peerId}</td>`;
-                tableBody.appendChild(row);
-            });
-        })
-        .catch(error => console.error('获取黑名单信息失败:', error));
+            row.innerHTML = `
+                <td>${nodeId}</td>
+                <td>${stats.count} (${stats.blacklistedBy.join(', ')})</td>
+            `;
+            tableBody.appendChild(row);
+        });
+    })
+    .catch(error => console.error('获取黑名单信息失败:', error));
+}
+
+// 获取节点黑名单详情 - 保留函数但不再使用
+function fetchPeerBlacklists() {
+    // 这个函数保留但不再调用，功能已被合并到fetchCombinedBlacklist
+    return Promise.resolve();
 }
 
 // 获取网络统计信息
@@ -390,6 +565,179 @@ function fetchNetworkStats() {
             container.innerHTML = html;
         })
         .catch(error => console.error('获取网络统计信息失败:', error));
+}
+
+// 获取消息记录
+function fetchMessages() {
+    return fetch('/api/messages')
+        .then(response => response.json())
+        .then(data => {
+            // 按消息类型归类
+            const messagesByType = {
+                block: [],
+                tx: [],
+                ping: [],
+                other: []
+            };
+            
+            // 清空所有消息表
+            document.getElementById('all-messages-table').innerHTML = '';
+            document.getElementById('block-messages-table').innerHTML = '';
+            document.getElementById('tx-messages-table').innerHTML = '';
+            document.getElementById('ping-messages-table').innerHTML = '';
+            document.getElementById('other-messages-table').innerHTML = '';
+            
+            const section = document.getElementById('messages-section');
+            
+            if (data.length === 0) {
+                section.classList.add('empty');
+                document.getElementById('all-messages-table').innerHTML = '<tr><td colspan="5" class="empty-state">没有消息记录</td></tr>';
+                document.getElementById('block-messages-table').innerHTML = '<tr><td colspan="5" class="empty-state">没有区块相关消息</td></tr>';
+                document.getElementById('tx-messages-table').innerHTML = '<tr><td colspan="5" class="empty-state">没有交易相关消息</td></tr>';
+                document.getElementById('ping-messages-table').innerHTML = '<tr><td colspan="5" class="empty-state">没有PING/PONG消息</td></tr>';
+                document.getElementById('other-messages-table').innerHTML = '<tr><td colspan="5" class="empty-state">没有其他消息</td></tr>';
+                return;
+            }
+            
+            section.classList.remove('empty');
+            
+            // 按时间倒序排列
+            data.sort((a, b) => b.timestamp - a.timestamp);
+            
+            // 分类消息
+            data.forEach(message => {
+                // 根据消息类型分类
+                const msgType = (message.msg_type || '').toUpperCase();
+                
+                if (msgType.includes('BLOCK') || msgType === 'INV' || msgType === 'GETBLOCK') {
+                    messagesByType.block.push(message);
+                } else if (msgType.includes('TX') || msgType === 'TRANSACTION') {
+                    messagesByType.tx.push(message);
+                } else if (msgType === 'PING' || msgType === 'PONG') {
+                    messagesByType.ping.push(message);
+                } else {
+                    messagesByType.other.push(message);
+                }
+            });
+            
+            // 限制各类型最多显示100条消息
+            Object.keys(messagesByType).forEach(type => {
+                if (messagesByType[type].length > 100) {
+                    messagesByType[type] = messagesByType[type].slice(0, 100);
+                }
+            });
+            
+            // 创建"全部"分类，包含所有子分类的消息
+            const allMessages = [
+                ...messagesByType.block,
+                ...messagesByType.tx,
+                ...messagesByType.ping,
+                ...messagesByType.other
+            ];
+            
+            // 重新按时间倒序排列"全部"分类
+            allMessages.sort((a, b) => b.timestamp - a.timestamp);
+            
+            // 更新消息数量计数器
+            updateCounter('messages-section', allMessages.length);
+            
+            // 渲染各类消息表格
+            renderMessagesTable('all-messages-table', allMessages);
+            renderMessagesTable('block-messages-table', messagesByType.block);
+            renderMessagesTable('tx-messages-table', messagesByType.tx);
+            renderMessagesTable('ping-messages-table', messagesByType.ping);
+            renderMessagesTable('other-messages-table', messagesByType.other);
+        })
+        .catch(error => console.error('获取消息记录失败:', error));
+}
+
+// 渲染消息表格
+function renderMessagesTable(tableId, messages) {
+    const tableBody = document.getElementById(tableId);
+    
+    if (messages.length === 0) {
+        tableBody.innerHTML = `<tr><td colspan="5" class="empty-state">没有${getMessageTypeName(tableId)}消息</td></tr>`;
+        return;
+    }
+    
+    messages.forEach(message => {
+        const row = document.createElement('tr');
+        
+        // 根据消息类型设置样式
+        if (message.type === 'SENT') {
+            row.classList.add('sent-message');
+        } else if (message.type === 'RECEIVED') {
+            row.classList.add('received-message');
+        }
+        
+        // 格式化消息内容显示
+        let content = '';
+        let fullContent = '';
+        
+        if (typeof message.content === 'object') {
+            try {
+                // 准备完整内容用于悬停显示
+                fullContent = JSON.stringify(message.content, null, 2);
+                
+                // 尝试提取重要字段并美化显示
+                const importantFields = ['type', 'message_id', 'block_id', 'prev_block_id', 'id', 'tx_id', 'target_id', 'sender_id'];
+                const contentObj = message.content;
+                
+                let contentPreview = [];
+                
+                // 优先显示重要字段
+                importantFields.forEach(field => {
+                    if (contentObj[field]) {
+                        let value = contentObj[field];
+                        // 对于ID类型字段，使用截断函数
+                        if (field.includes('id') && typeof value === 'string' && value.length > 12) {
+                            value = truncateId(value, 12);
+                        }
+                        contentPreview.push(`${field}: ${value}`);
+                    }
+                });
+                
+                // 如果没有重要字段，尝试其他字段
+                if (contentPreview.length === 0) {
+                    const keys = Object.keys(contentObj).slice(0, 4);
+                    keys.forEach(key => {
+                        let value = contentObj[key];
+                        if (typeof value === 'object') value = '[Object]';
+                        contentPreview.push(`${key}: ${value}`);
+                    });
+                }
+                
+                content = contentPreview.join(', ');
+            } catch (e) {
+                content = '无法解析的对象';
+                fullContent = String(message.content);
+            }
+        } else {
+            content = message.content || '';
+            fullContent = content;
+        }
+        
+        row.innerHTML = `
+            <td>${formatTimestamp(message.timestamp)}</td>
+            <td>${message.msg_type || '未知'}</td>
+            <td><span class="blockchain-id" title="${message.sender || '未知'}">${truncateId(message.sender || '未知', 8)}</span></td>
+            <td><span class="blockchain-id" title="${message.receiver || '未知'}">${truncateId(message.receiver || '未知', 8)}</span></td>
+            <td><span class="message-content" title="${fullContent}">${content}</span></td>
+        `;
+        tableBody.appendChild(row);
+    });
+}
+
+// 获取消息类型名称
+function getMessageTypeName(tableId) {
+    switch(tableId) {
+        case 'all-messages-table': return '';
+        case 'block-messages-table': return '区块相关';
+        case 'tx-messages-table': return '交易相关';
+        case 'ping-messages-table': return 'PING/PONG';
+        case 'other-messages-table': return '其他';
+        default: return '';
+    }
 }
 
 // 更新卡片标题中的计数器

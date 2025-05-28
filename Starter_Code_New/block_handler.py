@@ -85,15 +85,21 @@ def compute_block_hash(block):
 
 
 def handle_block(msg, self_id):
-    # TODO: Check the correctness of `block ID` in the received block. If incorrect, drop the block and record the sender's offence.
-    if compute_block_hash(msg) != msg["block_id"]:
-        record_offense(msg["peer_id"])
-        return
+    # 注意：区块哈希验证已经在message_handler.py中完成，这里不再重复验证
+    # computed_hash = compute_block_hash(msg)
+    # if computed_hash != msg["block_id"]:
+    #     sender_id = msg.get("peer_id") or msg.get("sender_id") 
+    #     if sender_id:
+    #         print(f"检测到恶意节点 {sender_id}，区块ID验证失败")
+    #         record_offense(sender_id)
+    #     return
+    
     # TODO: Check if the block exists in the local blockchain. If yes, drop the block.
     for block in received_blocks:
         if block["block_id"] == msg["block_id"]:
-            print("exist block")
+            print("区块已存在于本地区块链中，忽略")
             return
+            
     # TODO: Check if the previous block of the block exists in the local blockchain. If not, add the block to the list of orphaned blocks (`orphan_blocks`). If yes, add the block to the local blockchain.
     previous_block_id = msg.get("previous_block_id")
     isPreviousBlockExist = False
@@ -101,16 +107,20 @@ def handle_block(msg, self_id):
         if block["block_id"] == previous_block_id:
             isPreviousBlockExist = True
             break
+            
     if previous_block_id is None or isPreviousBlockExist:
         received_blocks.append(msg)
         header_store.append({
             "block_id": msg["block_id"],
             "previous_block_id": msg["previous_block_id"]
         })
+        print(f"区块 {msg['block_id']} 已添加到本地区块链中")
 
     else:
         orphan_blocks[msg["block_id"]] = msg
+        print(f"区块 {msg['block_id']} 的前置区块 {previous_block_id} 不存在，暂存为孤块")
         return
+        
     # TODO: Check if the block is the previous block of blocks in `orphan_blocks`. If yes, add the orphaned blocks to the local blockchain.
     orphaned_to_add = []
     for orphan_id, orphan_block in orphan_blocks.items():
@@ -121,6 +131,8 @@ def handle_block(msg, self_id):
                 "previous_block_id": orphan_block["previous_block_id"]
             })
             orphaned_to_add.append(orphan_id)
+            print(f"孤块 {orphan_id} 现在可以添加到区块链中")
+            
     for orphan_id in orphaned_to_add:
         del orphan_blocks[orphan_id]
 
@@ -129,7 +141,7 @@ def handle_block(msg, self_id):
 def create_getblock(sender_id, requested_ids):
     # TODO: Define the JSON format of a `GETBLOCK` message, which should include `{message type, sender's ID, requesting block IDs}`.
     msg = {
-        "type": "GET_BLOCK",
+        "type": "GETBLOCK",
         "sender_id": sender_id,
         "requested_ids": requested_ids
     }

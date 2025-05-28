@@ -6,15 +6,9 @@ import random
 from collections import defaultdict, deque
 from threading import Lock
 import logging
+
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-
-# 自定义JSON编码器处理特殊数据类型
-class CustomJSONEncoder(json.JSONEncoder):
-    def default(self, obj):
-        if isinstance(obj, set):
-            return list(obj)
-        return json.JSONEncoder.default(self, obj)
 
 # === Per-peer Rate Limiting ===
 RATE_LIMIT = 10  # max messages
@@ -82,31 +76,16 @@ rate_limiter = RateLimiter()
 
 def enqueue_message(target_id, ip, port, message):
     from peer_manager import blacklist, rtt_tracker 
-
-    # 确保target_id是字符串类型
-    str_target_id = str(target_id)
-
-    # 检查消息是否为字符串，如果是则转换为字典
-    if isinstance(message, str):
-        try:
-            # 移除可能的换行符
-            message = message.strip()
-            message_dict = json.loads(message)
-            message = message_dict  # 统一使用字典对象在队列中
-        except json.JSONDecodeError:
-            logger.error(f"无法解析消息字符串为JSON: {message[:100]}")
-            return False
-    
     # 检查速率限制
     #Check if the peer sends message to the receiver too frequently using the function `is_rate_limited`. If yes, drop the message.
-    if is_rate_limited(str_target_id):
-        logger.debug(f"节点发送到 {str_target_id} 的消息被限制")
+    if is_rate_limited(target_id):
+        logger.debug(f"节点发送到 {target_id} 的消息被限制")
         return False
     
     # 检查黑名单
     #Check if the receiver exists in the `blacklist`. If yes, drop the message.
-    if str_target_id in blacklist:
-        logger.debug(f"节点尝试发送消息到黑名单中的节点 {str_target_id}")
+    if target_id in blacklist:
+        logger.debug(f"节点尝试发送消息到黑名单中的节点 {target_id}")
         return False
     
     # 获取消息优先级
@@ -114,19 +93,19 @@ def enqueue_message(target_id, ip, port, message):
     priority = classify_priority(message)
     
     # 初始化目标节点的队列(如果不存在)
-    if str_target_id not in queues:
-        queues[str_target_id] = defaultdict(deque)
+    if target_id not in queues:
+        queues[target_id] = defaultdict(deque)
     
     #Add the message to the queue (`queues`) if the length of the queue is within the limit `QUEUE_LIMIT`, or otherwise, drop the message.
     # 检查队列长度限制
-    if sum(len(q) for q in queues[str_target_id].values()) >= QUEUE_LIMIT:
-        logger.warning(f"发往节点 {str_target_id} 的队列已满")
+    if sum(len(q) for q in queues[target_id].values()) >= QUEUE_LIMIT:
+        logger.warning(f"发往节点 {target_id} 的队列已满")
         return False
     
     # 将消息加入队列
     with lock:
-        queues[str_target_id][priority].append((message, ip, port, time.time()))
-        logger.debug(f"消息 {message.get('type')} 已加入发送队列，目标: {str_target_id}, 优先级: {priority}")
+        queues[target_id][priority].append((message, ip, port, time.time()))
+        logger.debug(f"消息 {message.get('type')} 已加入发送队列，目标: {target_id}, 优先级: {priority}")
     return True
 
 
@@ -243,24 +222,14 @@ def send_from_queue(self_id):
 
 def relay_or_direct_send(self_id, dst_id, message):
     from peer_discovery import known_peers, peer_flags, peer_config
-
-    # Check if the target peer is NATed. 
     """检查目标节点是否为NAT节点,决定是直接发送消息还是通过中继节点"""
-    # 确保使用字符串类型的键
-    str_self_id = str(self_id)
-    str_dst_id = str(dst_id)
-    
-    # 增加消息ID，以便追踪消息流
-    if isinstance(message, dict) and "message_id" not in message:
-        message["message_id"] = f"{str_self_id}_{time.time()}_{random.randint(1000, 9999)}"
-    
-    # 检查目标节点是否在NAT后面
+    # Check if the target peer is NATed. 
     is_nated = False
-    if str_dst_id in peer_flags and peer_flags[str_dst_id].get("nat") is True:
+    if dst_id in peer_flags and peer_flags[dst_id].get("nat",False):
         is_nated = True
         logger.info(f"目标节点 {dst_id} 根据peer_flags判断为NAT状态，需要使用中继")
     else:
-        logger.info(f"目标节点 {dst_id} 根据peer_flags判断为非NAT状态或状态未知 ({peer_flags.get(str_dst_id, {}).get('nat')})，尝试直接发送")
+        logger.info(f"目标节点 {dst_id} 根据peer_flags判断为非NAT状态或状态未知 ({peer_flags.get(dst_id, {}).get('nat')})，尝试直接发送")
         
     # If the target peer is NATed, use the function `get_relay_peer` to find the best relaying peer. 
     # Define the JSON format of a `RELAY` message, which should include `{message type, sender's ID, target peer's ID, `payload`}`. 
@@ -269,7 +238,7 @@ def relay_or_direct_send(self_id, dst_id, message):
     if is_nated:
         # 找到最佳中继节点
         logger.info(f"为NAT节点 {dst_id} 寻找中继节点...")
-        relay_peer = get_relay_peer(str_self_id, str_dst_id) # (peer_id, ip, port) or None
+        relay_peer = get_relay_peer(self_id, dst_id) # (peer_id, ip, port) or None
         
         if relay_peer:
             # 创建中继消息
@@ -278,7 +247,6 @@ def relay_or_direct_send(self_id, dst_id, message):
                 "sender_id": self_id,
                 "target_id": dst_id,
                 "payload": message,
-                "message_id": f"relay_{time.time()}_{random.randint(1000, 9999)}"
             }
             
             # 发送中继消息
@@ -305,58 +273,32 @@ def get_relay_peer(self_id, dst_id):
     from peer_discovery import known_peers, reachable_by
     
     """为NAT后的节点找到最佳中继节点"""
-    # 确保使用字符串类型的键
-    str_self_id = str(self_id)
-    str_dst_id = str(dst_id)
-    # Find the set of relay candidates reachable from the target peer 
+    # TODO: Find the set of relay candidates reachable from the target peer 
     # in `reachable_by` of `peer_discovery.py`.
-    candidate_relays_info = [] # Store (peer_id_str, ip, port)
-    logger.debug(f"[{self_id}] get_relay_peer:寻找 {dst_id} 的中继. 已知节点: {list(known_peers.keys())}")
-
-    # 首先尝试从reachable_by中查找已知可以作为目标节点中继的节点
-    if str_dst_id in reachable_by and reachable_by[str_dst_id]:
-        for relay_id in reachable_by[str_dst_id]:
-            relay_id_str = str(relay_id)
-            if relay_id_str in known_peers:
-                ip, port = known_peers[relay_id_str]
-                candidate_relays_info.append((relay_id_str, ip, port))
-                logger.debug(f"[{self_id}] get_relay_peer: 从reachable_by中找到候选中继 {relay_id_str}")
+    candidate_relays_info = [] # Store (peer_id, ip, port)
     
-    # 如果reachable_by中没有找到中继，则查找所有非NAT节点作为候选
-    if not candidate_relays_info:
-        for known_peer_id_str, (ip, port) in known_peers.items():
-            # 不能是自己或目标节点
-            if known_peer_id_str == str_self_id or known_peer_id_str == str_dst_id:
-                continue
-
-            # 必须是非NAT节点
-            # 检查 peer_flags 是否有此节点以及nat标志是否明确为False
-            node_flags = peer_flags.get(known_peer_id_str, {})
-            is_peer_nat = node_flags.get("nat")
-
-            # 只要不是明确标记为NAT的节点都可以作为候选
-            if is_peer_nat is not True:
-                candidate_relays_info.append((known_peer_id_str, ip, port))
-                logger.debug(f"[{self_id}] get_relay_peer: 候选有效中继 {known_peer_id_str} (非NAT或状态未知)")
-            else:
-                logger.debug(f"[{self_id}] get_relay_peer: 候选节点 {known_peer_id_str} 被跳过 (NAT状态: {is_peer_nat})")
+    # 尝试从reachable_by中查找已知可以作为目标节点中继的节点
+    if dst_id in reachable_by and reachable_by[dst_id]:
+        for relay_id in reachable_by[dst_id]:
+            if relay_id in known_peers:
+                ip, port = known_peers[relay_id]
+                candidate_relays_info.append((relay_id, ip, port))
+                logger.debug(f"[{self_id}] get_relay_peer: 从reachable_by中找到候选中继 {relay_id}")
     
     if not candidate_relays_info:
         logger.warning(f"[{self_id}] get_relay_peer: 节点 {dst_id}：找不到任何非NAT的中继候选节点。")
         return None
-
+    # TODO: Read the transmission latency between the sender and other peers in `rtt_tracker` in `peer_manager.py`.
     # 选择最佳中继 (例如, RTT最低的)
     # 如果有多个候选，选择RTT最小的；如果RTT不可用，则随机选择一个
     best_relay_candidate = None
     min_rtt_to_relay = float('inf')
 
-    # 先尝试基于RTT选择
+    # 基于RTT选择
     relays_with_rtt = []
-    for relay_id_str, relay_ip, relay_port in candidate_relays_info:
-        rtt_list = rtt_tracker.get(relay_id_str, []) # rtt_tracker 使用字符串键
-        if rtt_list:
-            avg_rtt = sum(rtt_list) / len(rtt_list)
-            relays_with_rtt.append(((relay_id_str, relay_ip, relay_port), avg_rtt))
+    for relay_id, relay_ip, relay_port in candidate_relays_info:
+        rtt = rtt_tracker.get(relay_id, float('inf'))
+        relays_with_rtt.append(((relay_id, relay_ip, relay_port), rtt))
     
     if relays_with_rtt:
         # 按RTT排序并选择第一个
@@ -369,7 +311,7 @@ def get_relay_peer(self_id, dst_id):
         logger.info(f"[{self_id}] get_relay_peer: 为NAT目标 {dst_id} (无RTT信息) 随机选择中继节点 {best_relay_candidate[0]}")
     
     if best_relay_candidate:
-        return best_relay_candidate # (peer_id_str, ip, port)
+        return best_relay_candidate # (peer_id, ip, port)
     else:
         logger.warning(f"[{self_id}] get_relay_peer: 节点 {dst_id}：尽管有候选，但未能选择一个有效的中继节点。")
         return None
@@ -379,25 +321,44 @@ def send_message(ip, port, message):
     # Wrap the function `send_message` with the dynamic network condition 
     # in the function `apply_network_condition` of `link_simulator.py`.
     """发送消息到目标节点"""
-    from peer_discovery import known_peers
+    from peer_discovery import known_peers, peer_config
     # Send the message to the target peer. 
     try:
-        # 检查消息是否已经是字符串
-        if isinstance(message, str):
-            # 已经是字符串格式，确保以\n结尾
-            if not message.endswith('\n'):
-                message_data = (message + "\n").encode('utf-8')
-            else:
-                message_data = message.encode('utf-8')
-            # 调试日志
-            logger.info(f"准备发送字符串消息: {message[:50]}...")
+        # 从消息中获取发送者ID（如果是字典类型）
+        sender_id = "UNKNOWN"
+        if isinstance(message, dict) and "sender_id" in message:
+            sender_id = message["sender_id"]
         else:
-            # 使用自定义编码器处理特殊数据类型（如set）
-            message_json = json.dumps(message, cls=CustomJSONEncoder)
-            message_data = (message_json + "\n").encode('utf-8')
-            # 调试日志
+            # 尝试从配置中获取当前节点ID
+            sender_id = peer_config.get("self_id", "UNKNOWN")
+        
+        # 记录发送的消息
+        from dashboard import log_sent_message
+        
+        # 尝试找出接收者ID
+        receiver_id = "UNKNOWN"
+        for peer_id, (peer_ip, peer_port) in known_peers.items():
+            if peer_ip == ip and peer_port == port:
+                receiver_id = peer_id
+                break
+        
+        # 获取消息类型
+        if isinstance(message, dict):
             msg_type = message.get('type', 'UNKNOWN')
-            logger.info(f"准备发送JSON消息: 类型={msg_type}, 目标={ip}:{port}")
+        elif isinstance(message, str):
+            try:
+                import json
+                msg_data = json.loads(message.strip())
+                msg_type = msg_data.get('type', 'UNKNOWN')
+            except:
+                msg_type = 'UNKNOWN'
+        else:
+            msg_type = 'UNKNOWN'
+            
+        log_sent_message(sender_id, receiver_id, msg_type, message)
+            
+        logger.info(f"准备发送消息: 类型={msg_type}, 目标={ip}:{port}")   
+            
         
         # 创建并配置套接字
         client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -407,15 +368,19 @@ def send_message(ip, port, message):
         logger.info(f"尝试连接到: {ip}:{port}")
         client_socket.connect((ip, int(port)))
         
-        # 发送数据
-        client_socket.sendall(message_data)
-        
-        # 成功日志
+        # 确保发送的是字节流
         if isinstance(message, dict):
-            msg_type = message.get('type', 'UNKNOWN')
-            logger.info(f"消息发送成功: 类型={msg_type}, 目标={ip}:{port}, 大小={len(message_data)}字节")
+            import json
+            message_bytes = (json.dumps(message) + "\n").encode()
+        elif isinstance(message, str):
+            message_bytes = message.encode() if not message.endswith('\n') else message.encode()
         else:
-            logger.info(f"字符串消息发送成功: 目标={ip}:{port}, 大小={len(message_data)}字节")
+            message_bytes = str(message).encode()
+            
+        # 发送数据
+        client_socket.sendall(message_bytes)
+        
+        logger.info(f"消息发送成功: 类型={msg_type}, 目标={ip}:{port}, 大小={len(message_bytes)}字节")
         
         # 关闭连接
         client_socket.close()
@@ -491,29 +456,19 @@ def start_dynamic_capacity_adjustment():
 
 def gossip_message(self_id, message, fanout=3):
     """将消息传播给多个目标节点"""
-    from peer_discovery import known_peers, peer_config, peer_flags
-    
-    # 确保使用字符串类型的键
-    str_self_id = str(self_id)
-    
-    # 获取配置的fanout值
-    # Read the configuration `fanout` of the peer in `peer_config` of `peer_discovery.py`.
-    config_fanout = peer_config.get(self_id, {}).get("fanout", fanout)
-    if config_fanout:
-        fanout = config_fanout
+    from peer_discovery import known_peers, peer_flags
     
     # Randomly select the number of target peer from `known_peers`, which is equal to `fanout`. 
     # If the gossip message is a transaction, skip the lightweight peers in the `know_peers`.
     # 过滤已知节点
     candidates = []
     for peer_id in known_peers:
-        str_peer_id = str(peer_id)
-        if str_peer_id == str_self_id:  # 不向自己发送
+        if peer_id == self_id:  # 不向自己发送
             continue
             
         # 检查节点状态
         from peer_manager import peer_status
-        status = peer_status.get(str_peer_id, "unknown")
+        status = peer_status.get(peer_id, "unknown")
         
         # 如果节点状态是UNREACHABLE，则跳过该节点
         if status == "UNREACHABLE":
@@ -521,10 +476,10 @@ def gossip_message(self_id, message, fanout=3):
             
         # 如果是交易消息，排除轻量级节点
         if message.get("type") == "TX":
-            if str_peer_id in peer_flags and not peer_flags[str_peer_id].get("light"):
-                candidates.append(str_peer_id)
+            if peer_id in peer_flags and not peer_flags[peer_id].get("light"):
+                candidates.append(peer_id)
         else:
-            candidates.append(str_peer_id)
+            candidates.append(peer_id)
 
     # 如果候选节点数量少于fanout，则全部发送
     if len(candidates) <= fanout:

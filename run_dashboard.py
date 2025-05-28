@@ -16,6 +16,9 @@ sys.path.append(starter_code_dir)
 # 创建模拟数据的存根模块
 import types
 
+# 导入日志处理模块
+import Starter_Code_New.log_handler
+
 # 创建必要的模块和变量以避免导入错误
 sys.modules['peer_manager'] = types.ModuleType('peer_manager')
 sys.modules['peer_manager'].peer_status = {}
@@ -44,6 +47,7 @@ sys.modules['block_handler'].blockchain = []
 sys.modules['block_handler'].block_headers = []
 sys.modules['block_handler'].orphan_blocks = []
 sys.modules['block_handler'].is_lightweight = False
+sys.modules['block_handler'].header_store = []
 
 # 现在导入仪表盘模块
 from Starter_Code_New.dashboard import app
@@ -59,5 +63,6 @@ if __name__ == '__main__':
     
     print(f"启动仪表盘服务器: http://localhost:{port}/")
     print("请在浏览器中访问上述URL以查看仪表盘")
+    print("日志页面地址: http://localhost:{}/logs".format(port))
     # 设置debug=True以便在代码修改后自动重启
     app.run(host='0.0.0.0', port=port, debug=True) 

@@ -6,7 +6,7 @@ services:
     ports:
       - "6000:5000"    # Map peer TCP: 6000 -> 5000
       - "8000:7000"    # Map dashboard: 8000 -> 7000
-    command: ["python", "node.py", "--id", "5000", "--config", "config.json"]
+    command: ["python", "node.py", "--id", "5000", "--config", "config.json","--mode","malicious"]
     networks:
       p2pnet:
         ipv4_address: 172.28.0.10

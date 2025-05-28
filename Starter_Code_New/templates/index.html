@@ -92,86 +92,214 @@
             </div>
         </section>
 
-        <!-- 交易池 -->
-        <section class="card" id="transactions-section">
-            <h2>交易池</h2>
-            <div class="table-container">
-                <table>
-                    <thead>
-                        <tr>
-                            <th>交易ID</th>
-                            <th>发送方</th>
-                            <th>接收方</th>
-                            <th>金额</th>
-                            <th>时间戳</th>
-                        </tr>
-                    </thead>
-                    <tbody id="transactions-table">
-                        <tr><td colspan="5" class="empty-state">加载中...</td></tr>
-                    </tbody>
-                </table>
+        <!-- 合并的网络监控面板 -->
+        <section class="card important" id="network-monitor-section">
+            <h2>网络监控</h2>
+            <div class="tab-container combined-card">
+                <div class="tab-header">
+                    <div class="tab" data-target="transactions-panel">交易池</div>
+                    <div class="tab" data-target="orphan-blocks-panel">孤立区块</div>
+                    <div class="tab" data-target="network-stats-panel">网络统计</div>
+                    <div class="tab" data-target="redundancy-panel">冗余消息</div>
+                </div>
+                <div class="tab-content">
+                    <!-- 交易池面板 -->
+                    <div class="tab-panel" id="transactions-panel">
+                        <div class="table-container">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>交易ID</th>
+                                        <th>发送方</th>
+                                        <th>接收方</th>
+                                        <th>金额</th>
+                                        <th>时间戳</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="transactions-table">
+                                    <tr><td colspan="5" class="empty-state">加载中...</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                    
+                    <!-- 孤立区块面板 -->
+                    <div class="tab-panel" id="orphan-blocks-panel">
+                        <div class="table-container">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>区块ID</th>
+                                        <th>前置区块ID</th>
+                                        <th>时间戳</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="orphan-blocks-table">
+                                    <tr><td colspan="3" class="empty-state">加载中...</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                    
+                    <!-- 网络统计面板 -->
+                    <div class="tab-panel" id="network-stats-panel">
+                        <div class="stats-container" id="network-stats-content">
+                            <div class="empty-state">加载中...</div>
+                        </div>
+                    </div>
+                    
+                    <!-- 冗余消息面板 -->
+                    <div class="tab-panel" id="redundancy-panel">
+                        <div class="table-container">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>消息ID</th>
+                                        <th>重复次数</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="redundancy-table">
+                                    <tr><td colspan="2" class="empty-state">加载中...</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
             </div>
         </section>
 
-        <!-- 孤立区块 -->
-        <section class="card" id="orphan-blocks-section">
-            <h2>孤立区块</h2>
-            <div class="table-container">
-                <table>
-                    <thead>
-                        <tr>
-                            <th>区块ID</th>
-                            <th>前置区块ID</th>
-                            <th>时间戳</th>
-                        </tr>
-                    </thead>
-                    <tbody id="orphan-blocks-table">
-                        <tr><td colspan="3" class="empty-state">加载中...</td></tr>
-                    </tbody>
-                </table>
-            </div>
-        </section>
-
-        <!-- 网络统计 -->
-        <section class="card" id="network-stats-section">
-            <h2>网络统计</h2>
-            <div class="stats-container" id="network-stats-content">
-                <div class="empty-state">加载中...</div>
-            </div>
-        </section>
-        
-        <!-- 冗余消息统计 -->
-        <section class="card" id="redundancy-section">
-            <h2>冗余消息统计</h2>
-            <div class="table-container">
-                <table>
-                    <thead>
-                        <tr>
-                            <th>消息ID</th>
-                            <th>重复次数</th>
-                        </tr>
-                    </thead>
-                    <tbody id="redundancy-table">
-                        <tr><td colspan="2" class="empty-state">加载中...</td></tr>
-                    </tbody>
-                </table>
-            </div>
-        </section>
-        
-        <!-- 黑名单节点 -->
-        <section class="card" id="blacklist-section">
-            <h2>黑名单节点</h2>
+        <!-- 合并的黑名单信息 -->
+        <section class="card" id="blacklist-combined-section">
+            <h2>黑名单信息</h2>
             <div class="table-container">
                 <table>
                     <thead>
                         <tr>
                             <th>节点ID</th>
+                            <th>被加入黑名单次数</th>
                         </tr>
                     </thead>
-                    <tbody id="blacklist-table">
-                        <tr><td class="empty-state">加载中...</td></tr>
+                    <tbody id="blacklist-combined-table">
+                        <tr><td colspan="2" class="empty-state">加载中...</td></tr>
                     </tbody>
                 </table>
+            </div>
+        </section>
+
+        <!-- 消息记录 -->
+        <section class="card important" id="messages-section">
+            <h2>消息记录
+                <button id="open-send-block-modal" class="tool-button">发送区块</button>
+            </h2>
+            <div class="tab-container combined-card">
+                <div class="tab-header">
+                    <div class="tab" data-target="all-messages-panel">全部</div>
+                    <div class="tab" data-target="block-messages-panel">区块</div>
+                    <div class="tab" data-target="tx-messages-panel">交易</div>
+                    <div class="tab" data-target="ping-messages-panel">PING/PONG</div>
+                    <div class="tab" data-target="other-messages-panel">其他</div>
+                </div>
+                <div class="tab-content">
+                    <!-- 全部消息面板 -->
+                    <div class="tab-panel" id="all-messages-panel">
+                        <div class="table-container">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>时间</th>
+                                        <th>类型</th>
+                                        <th>发送者</th>
+                                        <th>接收者</th>
+                                        <th>内容</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="all-messages-table">
+                                    <tr><td colspan="5" class="empty-state">加载中...</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                    
+                    <!-- 区块消息面板 -->
+                    <div class="tab-panel" id="block-messages-panel">
+                        <div class="table-container">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>时间</th>
+                                        <th>类型</th>
+                                        <th>发送者</th>
+                                        <th>接收者</th>
+                                        <th>内容</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="block-messages-table">
+                                    <tr><td colspan="5" class="empty-state">加载中...</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                    
+                    <!-- 交易消息面板 -->
+                    <div class="tab-panel" id="tx-messages-panel">
+                        <div class="table-container">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>时间</th>
+                                        <th>类型</th>
+                                        <th>发送者</th>
+                                        <th>接收者</th>
+                                        <th>内容</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="tx-messages-table">
+                                    <tr><td colspan="5" class="empty-state">加载中...</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                    
+                    <!-- PING/PONG消息面板 -->
+                    <div class="tab-panel" id="ping-messages-panel">
+                        <div class="table-container">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>时间</th>
+                                        <th>类型</th>
+                                        <th>发送者</th>
+                                        <th>接收者</th>
+                                        <th>内容</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="ping-messages-table">
+                                    <tr><td colspan="5" class="empty-state">加载中...</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                    
+                    <!-- 其他消息面板 -->
+                    <div class="tab-panel" id="other-messages-panel">
+                        <div class="table-container">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>时间</th>
+                                        <th>类型</th>
+                                        <th>发送者</th>
+                                        <th>接收者</th>
+                                        <th>内容</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="other-messages-table">
+                                    <tr><td colspan="5" class="empty-state">加载中...</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
             </div>
         </section>
     </div>
@@ -179,6 +307,20 @@
     <footer>
         <p>区块链P2P网络模拟 | 最后更新: <span id="last-updated"></span></p>
     </footer>
+
+    <!-- 发送区块模态框 -->
+    <div id="send-block-modal" class="modal">
+        <div class="modal-content">
+            <span class="close">&times;</span>
+            <h3>发送区块到指定节点</h3>
+            <div class="form-group">
+                <label for="target-peer-id">目标节点ID:</label>
+                <input type="text" id="target-peer-id" placeholder="输入目标节点ID">
+            </div>
+            <button id="send-block-btn">发送区块</button>
+            <div id="send-block-result" class="result-message"></div>
+        </div>
+    </div>
 
     <script>
     document.addEventListener('DOMContentLoaded', function() {

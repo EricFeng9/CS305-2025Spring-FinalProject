@@ -1,11 +1,7 @@
 from flask import Flask, jsonify, render_template, request, url_for
 from threading import Thread
 from peer_manager import peer_status, rtt_tracker, get_peer_status, blacklist
-from transaction import get_recent_transactions
-from outbox import rate_limiter, get_outbox_status, get_drop_stats
-from message_handler import get_redundancy_stats
 from peer_discovery import known_peers,peer_flags
-from block_handler import received_blocks, header_store
 import json
 import time
 import threading
@@ -50,9 +46,11 @@ dashboard_data = {
     "redundancy": {}
 }
 
+
 #--------------------------------------------#
 def start_dashboard(peer_id, port=None):
     global blockchain_data_ref, known_peers_ref, dashboard_data
+    from block_handler import received_blocks
     dashboard_data["peer_id"] = peer_id
     blockchain_data_ref = received_blocks
     known_peers_ref = known_peers
@@ -146,7 +144,7 @@ def latency():
 
 @app.route('/capacity')
 def capacity():
-    # display the sending capacity of the peer.
+    from outbox import rate_limiter
     # 返回节点容量
     return jsonify(rate_limiter.capacity)
 
@@ -158,6 +156,8 @@ def orphan_blocks():
 
 @app.route('/redundancy')
 def redundancy_stats():
+    # 局部导入
+    from message_handler import get_redundancy_stats
     # display the number of redundant messages received.
     # 返回冗余消息统计
     return jsonify(dashboard_data["redundancy"])
@@ -166,6 +166,9 @@ def redundancy_stats():
 #------以下为额外添加内容-------
 @app.route('/api/network/stats')
 def get_network_stats():
+    # 局部导入
+    from outbox import get_outbox_status, get_drop_stats
+    from message_handler import get_redundancy_stats
     # 获取网络统计信息
     redundancy = get_redundancy_stats()
     outbox_status = get_outbox_status()
@@ -179,6 +182,8 @@ def get_network_stats():
 
 @app.route('/api/blockchain/status')
 def get_blockchain_status():
+    # 局部导入
+    from block_handler import received_blocks
     # 获取区块链状态
     chain_length = len(received_blocks)
     latest_block = received_blocks[-1] if received_blocks else {}
@@ -190,16 +195,44 @@ def get_blockchain_status():
 
 @app.route('/api/blockchain/blocks')
 def get_blockchain_blocks():
+    # 局部导入
+    from block_handler import received_blocks
     # 获取区块链上的所有区块
     return jsonify(received_blocks)
 
 @app.route('/api/blacklist')
 def get_blacklist():
-    # 获取黑名单列表
+    # 只获取当前节点的黑名单列表
+    from peer_manager import blacklist
     return jsonify(list(blacklist))
+
+@app.route('/api/peer_blacklists')
+def get_peer_blacklists():
+    # 为了兼容前端，返回简化的数据结构
+    # 只包含当前节点的黑名单信息
+    from peer_manager import blacklist
+    my_id = os.environ.get('PEER_ID', 'Unknown')
+    simplified_blacklists = {
+        my_id: list(blacklist)
+    }
+    return jsonify(simplified_blacklists)
+
+@app.route('/api/messages')
+def get_messages():
+    """获取消息记录，合并所有类型的消息并按时间排序"""
+    # 合并所有类型的消息
+    all_messages = []
+    for msg_type in message_logs_by_type:
+        all_messages.extend(message_logs_by_type[msg_type])
+    
+    # 按时间倒序排序
+    all_messages.sort(key=lambda x: x["timestamp"], reverse=True)
+    
+    return jsonify(all_messages)
 
 @app.route('/api/capacity')
 def get_capacity():
+    from outbox import rate_limiter
     # 获取节点当前发送容量
     capacity = {
         'current': rate_limiter.capacity,
@@ -207,9 +240,52 @@ def get_capacity():
     }
     return jsonify(capacity)
 
+# 新增：强制发送区块消息到指定节点的API
+@app.route('/api/send_block', methods=['POST'])
+def send_block_to_peer():
+    from flask import request
+    from block_handler import received_blocks
+    from outbox import enqueue_message
+    from peer_discovery import known_peers
+
+    try:
+        data = request.json
+        target_peer_id = data.get('target_peer_id')
+        
+        if not target_peer_id:
+            return jsonify({"status": "error", "message": "缺少目标节点ID"}), 400
+            
+        if target_peer_id not in known_peers:
+            return jsonify({"status": "error", "message": "目标节点未知"}), 404
+            
+        # 获取本地最新区块
+        if not received_blocks:
+            return jsonify({"status": "error", "message": "本地区块链为空"}), 400
+            
+        latest_block = received_blocks[-1]
+        target_ip, target_port = known_peers[target_peer_id]
+        
+        # 直接发送区块
+        result = enqueue_message(target_peer_id, target_ip, target_port, latest_block)
+        
+        if result:
+            # 记录发送的消息
+            my_id = os.environ.get('PEER_ID', 'Unknown')
+            log_sent_message(my_id, target_peer_id, "BLOCK", latest_block)
+            return jsonify({"status": "success", "message": f"成功发送区块 {latest_block['block_id']} 到节点 {target_peer_id}"})
+        else:
+            return jsonify({"status": "error", "message": "消息入队失败"}), 500
+            
+    except Exception as e:
+        return jsonify({"status": "error", "message": f"发送失败: {str(e)}"}), 500
+
 def update_dashboard_data(peer_id):
     """更新仪表盘数据"""
     global dashboard_data
+    
+    # 局部导入
+    from outbox import rate_limiter, get_outbox_status, get_drop_stats
+    from block_handler import received_blocks, orphan_blocks, header_store
     
     # 更新节点信息
     from peer_manager import get_peer_status
@@ -220,7 +296,6 @@ def update_dashboard_data(peer_id):
     dashboard_data["transactions"] = get_recent_transactions()
     
     # 更新区块信息
-    from block_handler import received_blocks, orphan_blocks
     # 使用header_store代替不存在的block_headers
     is_lightweight = False
     if is_lightweight:
@@ -244,15 +319,99 @@ def update_dashboard_data(peer_id):
     # 更新传输延迟信息
     from peer_manager import rtt_tracker
     latency_data = {}
-    for peer, rtts in rtt_tracker.items():
-        if rtts:
-            latency_data[peer] = sum(rtts) / len(rtts)
+    for peer, rtt in rtt_tracker.items():
+        if rtt is not None:
+            latency_data[peer] = rtt
     dashboard_data["latency"] = latency_data
     
     # 更新节点发送容量
-    from outbox import rate_limiter
     dashboard_data["capacity"] = rate_limiter.capacity
     
     # 更新冗余消息信息
     from message_handler import get_redundancy_stats
     dashboard_data["redundancy"] = get_redundancy_stats()
+    
+    # 不再需要收集其他节点的黑名单信息
+    # 删除update_peer_blacklists()调用
+
+# 移除不需要的update_peer_blacklists函数
+# def update_peer_blacklists():
+#     """从网络中收集各节点的黑名单信息"""
+#     这个函数不再需要，注释掉或删除
+
+# 简化blacklists变量
+peer_blacklists = {}  # 保留变量以避免前端错误，但不再使用
+
+# 消息记录，按类型分类记录发送和接收的消息
+message_logs_by_type = {
+    "block": [],  # 区块相关消息
+    "tx": [],     # 交易相关消息
+    "ping": [],   # PING/PONG消息
+    "other": []   # 其他类型消息
+}
+MAX_MESSAGES_PER_TYPE = 100  # 每种类型最多保存的消息记录数量
+
+# 用于记录发送消息的函数，在outbox.py中调用
+def log_sent_message(sender_id, receiver_id, msg_type, content):
+    """记录发送的消息"""
+    message = {
+        "type": "SENT",
+        "timestamp": time.time(),
+        "sender": str(sender_id),
+        "receiver": str(receiver_id),
+        "msg_type": msg_type,
+        "content": str(content)[:200]  # 截断过长的内容
+    }
+    
+    # 根据消息类型分类存储
+    msg_type_upper = msg_type.upper() if msg_type else ""
+    if msg_type_upper.find("BLOCK") >= 0 or msg_type_upper in ["INV", "GETBLOCK"]:
+        message_logs_by_type["block"].append(message)
+        # 限制该类型消息数量
+        if len(message_logs_by_type["block"]) > MAX_MESSAGES_PER_TYPE:
+            message_logs_by_type["block"] = message_logs_by_type["block"][-MAX_MESSAGES_PER_TYPE:]
+    elif msg_type_upper.find("TX") >= 0 or msg_type_upper == "TRANSACTION":
+        message_logs_by_type["tx"].append(message)
+        if len(message_logs_by_type["tx"]) > MAX_MESSAGES_PER_TYPE:
+            message_logs_by_type["tx"] = message_logs_by_type["tx"][-MAX_MESSAGES_PER_TYPE:]
+    elif msg_type_upper in ["PING", "PONG"]:
+        message_logs_by_type["ping"].append(message)
+        if len(message_logs_by_type["ping"]) > MAX_MESSAGES_PER_TYPE:
+            message_logs_by_type["ping"] = message_logs_by_type["ping"][-MAX_MESSAGES_PER_TYPE:]
+    else:
+        message_logs_by_type["other"].append(message)
+        if len(message_logs_by_type["other"]) > MAX_MESSAGES_PER_TYPE:
+            message_logs_by_type["other"] = message_logs_by_type["other"][-MAX_MESSAGES_PER_TYPE:]
+
+# 用于记录接收消息的函数，在message_handler.py中调用
+def log_received_message(sender_id, receiver_id, msg_type, content):
+    """记录接收的消息"""
+    message = {
+        "type": "RECEIVED",
+        "timestamp": time.time(),
+        "sender": str(sender_id),
+        "receiver": str(receiver_id),
+        "msg_type": msg_type,
+        "content": str(content)[:200]  # 截断过长的内容
+    }
+    
+    # 根据消息类型分类存储
+    msg_type_upper = msg_type.upper() if msg_type else ""
+    if msg_type_upper.find("BLOCK") >= 0 or msg_type_upper in ["INV", "GETBLOCK"]:
+        message_logs_by_type["block"].append(message)
+        # 限制该类型消息数量
+        if len(message_logs_by_type["block"]) > MAX_MESSAGES_PER_TYPE:
+            message_logs_by_type["block"] = message_logs_by_type["block"][-MAX_MESSAGES_PER_TYPE:]
+    elif msg_type_upper.find("TX") >= 0 or msg_type_upper == "TRANSACTION":
+        message_logs_by_type["tx"].append(message)
+        if len(message_logs_by_type["tx"]) > MAX_MESSAGES_PER_TYPE:
+            message_logs_by_type["tx"] = message_logs_by_type["tx"][-MAX_MESSAGES_PER_TYPE:]
+    elif msg_type_upper in ["PING", "PONG"]:
+        message_logs_by_type["ping"].append(message)
+        if len(message_logs_by_type["ping"]) > MAX_MESSAGES_PER_TYPE:
+            message_logs_by_type["ping"] = message_logs_by_type["ping"][-MAX_MESSAGES_PER_TYPE:]
+    else:
+        message_logs_by_type["other"].append(message)
+        if len(message_logs_by_type["other"]) > MAX_MESSAGES_PER_TYPE:
+            message_logs_by_type["other"] = message_logs_by_type["other"][-MAX_MESSAGES_PER_TYPE:]
+
