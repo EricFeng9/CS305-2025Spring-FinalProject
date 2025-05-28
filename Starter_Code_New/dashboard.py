@@ -114,13 +114,20 @@ def peers():
     # 整合所有节点信息
     for peer_id, (ip, port) in known_peers.items():
         peer_id_str = str(peer_id)
+        flag_info = peer_flags.get(peer_id_str, {})  # 确保使用字符串键
+        status = peer_status.get(peer_id_str, "unknown")  # 确保使用字符串键
+        
+        # 处理NAT和light标志
+        nat_status = flag_info.get("nat")
+        light_status = flag_info.get("light")
+        
         peers_info[peer_id_str] = {
             "peer_id": peer_id_str,
             "ip": ip,
             "port": port,
-            "status": peer_status.get(peer_id, "UNKNOWN"),
-            "is_nated": peer_flags.get(peer_id, {}).get("nat", False),
-            "is_lightweight": peer_flags.get(peer_id, {}).get("light", False)
+            "status": status,
+            "nat": nat_status,
+            "light": light_status
         }
     
     return jsonify(peers_info)

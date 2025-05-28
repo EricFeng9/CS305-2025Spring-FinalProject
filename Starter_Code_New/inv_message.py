@@ -26,8 +26,30 @@ def get_inventory():
 def broadcast_inventory(self_id):
     # TODO: Create an `INV` message with all block IDs in the local blockchain.
     block_ids = get_inventory()
+    
+    if not block_ids:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info(f"[{self_id}] broadcast_inventory: 本地区块链为空，暂不广播")
+        return
+    
     inv_msg = create_inv(self_id, block_ids)
+    
+    # 添加日志输出
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.info(f"[{self_id}] broadcast_inventory: 广播区块链清单，包含 {len(block_ids)} 个区块")
+    
     # TODO: Broadcast the `INV` message to known peers using the function `gossip_message` in `outbox.py`.
-    gossip_message(self_id, inv_msg)
+    from outbox import gossip_message
+    
+    # 使用更高的fanout值确保消息能传播到更多节点
+    gossip_result = gossip_message(self_id, inv_msg, fanout=5)
+    
+    # 检查广播结果
+    if gossip_result:
+        logger.info(f"[{self_id}] broadcast_inventory: 成功广播区块清单")
+    else:
+        logger.warning(f"[{self_id}] broadcast_inventory: 区块清单广播失败")
 
 

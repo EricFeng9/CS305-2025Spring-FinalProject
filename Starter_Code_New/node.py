@@ -27,6 +27,7 @@ def main():
     MALICIOUS_MODE = args.mode == 'malicious'
 
     self_id = args.id
+    str_self_id = str(self_id)  # 确保使用字符串ID
 
     print(f"[{self_id}] Starting node...", flush=True)
 
@@ -35,13 +36,15 @@ def main():
 
     self_info = config["peers"][self_id]
 
-    peer_flags[self_id] = {
+    # 为当前节点设置自己的flags（从配置文件中获取，如果未指定则明确为False）
+    peer_flags[str_self_id] = {
         "nat": self_info.get("nat", False),
         "light": self_info.get("light", False)
     }
 
     for peer_id, peer_info in config["peers"].items():
-        known_peers[peer_id] = (peer_info["ip"], peer_info["port"])
+        str_peer_id = str(peer_id)  # 确保使用字符串ID
+        known_peers[str_peer_id] = (peer_info["ip"], peer_info["port"])
         peer_config = config["peers"]
 
     if args.fanout:
@@ -87,6 +90,7 @@ def main():
     # Start dashboard
     time.sleep(2)
     print(f"[{self_id}] Known peers before dashboard start: {known_peers}", flush=True)
+    print(f"[{self_id}] Peer flags before dashboard start: {peer_flags}", flush=True)
     print(f"[{self_id}] Starting dashboard on port {port + 2000}", flush=True)
     start_dashboard(self_id, port + 2000)
 

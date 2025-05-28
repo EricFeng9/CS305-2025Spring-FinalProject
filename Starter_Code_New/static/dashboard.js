@@ -35,7 +35,6 @@ function refreshAllData() {
         fetchBlocks(),
         fetchOrphanBlocks(),
         fetchTransactions(),
-        fetchLatency(),
         fetchCapacity(),
         fetchRedundancy(),
         fetchBlacklist(),
@@ -65,39 +64,102 @@ function truncateId(id, length = 8) {
 
 // 获取节点信息
 function fetchPeers() {
-    return fetch('/peers')
-        .then(response => response.json())
-        .then(data => {
-            const tableBody = document.getElementById('peers-table');
-            tableBody.innerHTML = '';
-            const section = document.getElementById('peers-section');
+    // 获取延迟数据和节点信息，然后合并显示
+    return Promise.all([
+        fetch('/peers').then(response => response.json()),
+        fetch('/latency').then(response => response.json())
+    ])
+    .then(([peersData, latencyData]) => {
+        const tableBody = document.getElementById('peers-table');
+        tableBody.innerHTML = '';
+        const section = document.getElementById('peers-section');
+        
+        if (Object.keys(peersData).length === 0) {
+            section.classList.add('empty');
+            tableBody.innerHTML = '<tr><td colspan="7" class="empty-state">没有已知节点</td></tr>';
+            return;
+        }
+        
+        section.classList.remove('empty');
+        
+        // 更新节点数量
+        updateCounter('peers-section', Object.keys(peersData).length);
+        
+        // 按照连接状态和ID排序：ALIVE > UNKNOWN > UNREACHABLE
+        const sortedPeers = Object.entries(peersData).sort((a, b) => {
+            const statusA = a[1].status.toLowerCase();
+            const statusB = b[1].status.toLowerCase();
             
-            if (Object.keys(data).length === 0) {
-                section.classList.add('empty');
-                tableBody.innerHTML = '<tr><td colspan="6" class="empty-state">没有已知节点</td></tr>';
-                return;
+            if (statusA === 'alive' && statusB !== 'alive') return -1;
+            if (statusA !== 'alive' && statusB === 'alive') return 1;
+            if (statusA === 'unknown' && statusB === 'unreachable') return -1;
+            if (statusA === 'unreachable' && statusB === 'unknown') return 1;
+            
+            return a[0].localeCompare(b[0]); // 按ID排序
+        });
+        
+        for (const [peerId, peerInfo] of sortedPeers) {
+            const row = document.createElement('tr');
+            
+            // 处理状态显示
+            let statusClass;
+            if (peerInfo.status.toLowerCase() === 'alive') {
+                statusClass = 'status-online';
+            } else if (peerInfo.status.toLowerCase() === 'unreachable') {
+                statusClass = 'status-offline';
+            } else {
+                statusClass = 'status-unknown';
             }
             
-            section.classList.remove('empty');
+            // 处理NAT和轻量级状态
+            let natDisplay = '否';
+            let lightDisplay = '否';
             
-            // 更新节点数量
-            updateCounter('peers-section', Object.keys(data).length);
-            
-            for (const [peerId, peerInfo] of Object.entries(data)) {
-                const row = document.createElement('tr');
-                const statusClass = peerInfo.status.toLowerCase() === 'active' ? 'status-online' : 'status-offline';
-                row.innerHTML = `
-                    <td><span class="truncate-id" title="${peerInfo.peer_id}">${peerInfo.peer_id}</span></td>
-                    <td>${peerInfo.ip}</td>
-                    <td>${peerInfo.port}</td>
-                    <td><span class="status ${statusClass}">${peerInfo.status}</span></td>
-                    <td>${peerInfo.is_nated ? '是' : '否'}</td>
-                    <td>${peerInfo.is_lightweight ? '是' : '否'}</td>
-                `;
-                tableBody.appendChild(row);
+            // 处理NAT状态
+            if (peerInfo.nat === true) {
+                natDisplay = '是';
+            } else if (peerInfo.nat === 'unknown') {
+                natDisplay = '未知';
             }
-        })
-        .catch(error => console.error('获取节点信息失败:', error));
+            
+            // 处理轻量级状态
+            if (peerInfo.light === true) {
+                lightDisplay = '是';
+            } else if (peerInfo.light === 'unknown') {
+                lightDisplay = '未知';
+            }
+            
+            // 获取延迟信息
+            let latencyDisplay = '未知';
+            if (latencyData[peerId]) {
+                latencyDisplay = `${latencyData[peerId].toFixed(2)}`;
+                
+                // 高亮显示高延迟
+                if (latencyData[peerId] > 500) {
+                    row.classList.add('highlight-row');
+                }
+            }
+            
+            // 根据节点状态设置行样式
+            if (peerInfo.status.toLowerCase() === 'alive') {
+                row.classList.add('alive-row');
+            } else if (peerInfo.status.toLowerCase() === 'unreachable') {
+                row.classList.add('unreachable-row');
+            }
+            
+            row.innerHTML = `
+                <td><span class="truncate-id" title="${peerInfo.peer_id}">${peerInfo.peer_id}</span></td>
+                <td>${peerInfo.ip}</td>
+                <td>${peerInfo.port}</td>
+                <td><span class="status ${statusClass}">${peerInfo.status}</span></td>
+                <td>${natDisplay}</td>
+                <td>${lightDisplay}</td>
+                <td>${latencyDisplay}</td>
+            `;
+            tableBody.appendChild(row);
+        }
+    })
+    .catch(error => console.error('获取节点信息失败:', error));
 }
 
 // 获取区块信息
@@ -201,47 +263,6 @@ function fetchTransactions() {
             });
         })
         .catch(error => console.error('获取交易信息失败:', error));
-}
-
-// 获取延迟信息
-function fetchLatency() {
-    return fetch('/latency')
-        .then(response => response.json())
-        .then(data => {
-            const tableBody = document.getElementById('latency-table');
-            tableBody.innerHTML = '';
-            const section = document.getElementById('latency-section');
-            
-            if (Object.keys(data).length === 0) {
-                section.classList.add('empty');
-                tableBody.innerHTML = '<tr><td colspan="2" class="empty-state">没有延迟数据</td></tr>';
-                return;
-            }
-            
-            section.classList.remove('empty');
-            
-            // 更新节点数量
-            updateCounter('latency-section', Object.keys(data).length);
-            
-            // 按延迟排序
-            const sortedPeers = Object.entries(data).sort((a, b) => a[1] - b[1]);
-            
-            sortedPeers.forEach(([peerId, latency]) => {
-                const row = document.createElement('tr');
-                // 高亮显示高延迟
-                const isHighLatency = latency > 500;
-                if (isHighLatency) {
-                    row.classList.add('highlight-row');
-                }
-                
-                row.innerHTML = `
-                    <td>${peerId}</td>
-                    <td>${latency.toFixed(2)} ms</td>
-                `;
-                tableBody.appendChild(row);
-            });
-        })
-        .catch(error => console.error('获取延迟信息失败:', error));
 }
 
 // 获取容量信息

@@ -24,6 +24,16 @@
         body::before {
             display: none;
         }
+        /* 增加重要卡片的样式 */
+        .card.important {
+            grid-column: span 2;
+        }
+        /* 移动设备响应式布局 */
+        @media (max-width: 768px) {
+            .card.important {
+                grid-column: span 1;
+            }
+        }
     </style>
     <script src="{{ url_for('static', filename='dashboard.js') }}" defer></script>
 </head>
@@ -38,8 +48,9 @@
     </header>
 
     <div class="dashboard-grid">
-        <section class="card" id="peers-section">
-            <h2>已知节点</h2>
+        <!-- 节点信息 - 扩大占用空间 -->
+        <section class="card important" id="peers-section">
+            <h2>节点网络状态</h2>
             <div class="table-container">
                 <table>
                     <thead>
@@ -50,16 +61,18 @@
                             <th>状态</th>
                             <th>NAT</th>
                             <th>轻量级</th>
+                            <th>延迟(ms)</th>
                         </tr>
                     </thead>
                     <tbody id="peers-table">
-                        <tr><td colspan="6" class="empty-state">加载中...</td></tr>
+                        <tr><td colspan="7" class="empty-state">加载中...</td></tr>
                     </tbody>
                 </table>
             </div>
         </section>
 
-        <section class="card" id="blocks-section">
+        <!-- 区块链 - 扩大占用空间 -->
+        <section class="card important" id="blocks-section">
             <h2>区块链</h2>
             <div class="table-container">
                 <table>
@@ -79,24 +92,7 @@
             </div>
         </section>
 
-        <section class="card" id="orphan-blocks-section">
-            <h2>孤立区块</h2>
-            <div class="table-container">
-                <table>
-                    <thead>
-                        <tr>
-                            <th>区块ID</th>
-                            <th>前置区块ID</th>
-                            <th>时间戳</th>
-                        </tr>
-                    </thead>
-                    <tbody id="orphan-blocks-table">
-                        <tr><td colspan="3" class="empty-state">加载中...</td></tr>
-                    </tbody>
-                </table>
-            </div>
-        </section>
-
+        <!-- 交易池 -->
         <section class="card" id="transactions-section">
             <h2>交易池</h2>
             <div class="table-container">
@@ -117,23 +113,34 @@
             </div>
         </section>
 
-        <section class="card" id="latency-section">
-            <h2>节点延迟</h2>
+        <!-- 孤立区块 -->
+        <section class="card" id="orphan-blocks-section">
+            <h2>孤立区块</h2>
             <div class="table-container">
                 <table>
                     <thead>
                         <tr>
-                            <th>节点ID</th>
-                            <th>延迟(ms)</th>
+                            <th>区块ID</th>
+                            <th>前置区块ID</th>
+                            <th>时间戳</th>
                         </tr>
                     </thead>
-                    <tbody id="latency-table">
-                        <tr><td colspan="2" class="empty-state">加载中...</td></tr>
+                    <tbody id="orphan-blocks-table">
+                        <tr><td colspan="3" class="empty-state">加载中...</td></tr>
                     </tbody>
                 </table>
             </div>
         </section>
 
+        <!-- 网络统计 -->
+        <section class="card" id="network-stats-section">
+            <h2>网络统计</h2>
+            <div class="stats-container" id="network-stats-content">
+                <div class="empty-state">加载中...</div>
+            </div>
+        </section>
+        
+        <!-- 冗余消息统计 -->
         <section class="card" id="redundancy-section">
             <h2>冗余消息统计</h2>
             <div class="table-container">
@@ -151,6 +158,7 @@
             </div>
         </section>
         
+        <!-- 黑名单节点 -->
         <section class="card" id="blacklist-section">
             <h2>黑名单节点</h2>
             <div class="table-container">
@@ -164,13 +172,6 @@
                         <tr><td class="empty-state">加载中...</td></tr>
                     </tbody>
                 </table>
-            </div>
-        </section>
-        
-        <section class="card" id="network-stats-section">
-            <h2>网络统计</h2>
-            <div class="stats-container" id="network-stats-content">
-                <div class="empty-state">加载中...</div>
             </div>
         </section>
     </div>

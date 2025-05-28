@@ -58,9 +58,9 @@ h1 {
 
 .dashboard-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(450px, 1fr));
-    gap: 24px;
-    margin-bottom: 24px;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 20px;
+    margin: 20px;
 }
 
 .card {
@@ -109,13 +109,15 @@ h1 {
 }
 
 .table-container {
-    padding: 0;
     overflow-x: auto;
+    max-height: 500px;
+    overflow-y: auto;
 }
 
 table {
     width: 100%;
     border-collapse: collapse;
+    font-size: 0.9rem;
 }
 
 th, td {
@@ -125,12 +127,11 @@ th, td {
 }
 
 th {
-    background-color: rgba(52, 152, 219, 0.05);
-    font-weight: 600;
-    color: var(--primary-color);
+    background-color: #f8f9fa;
     position: sticky;
     top: 0;
-    z-index: 1;
+    z-index: 10;
+    box-shadow: 0 2px 2px -1px rgba(0, 0, 0, 0.1);
 }
 
 tbody tr {
@@ -203,38 +204,50 @@ footer {
 
 /* 状态样式 */
 .status {
+    padding: 3px 8px;
+    border-radius: 4px;
+    font-weight: bold;
     display: inline-block;
-    padding: 4px 10px;
-    border-radius: 12px;
-    font-size: 0.85rem;
-    font-weight: 500;
+    text-align: center;
+    min-width: 80px;
 }
 
 .status-online {
-    background-color: rgba(46, 204, 113, 0.15);
-    color: #27ae60;
+    background-color: #d4edda;
+    color: #155724;
 }
 
 .status-offline {
-    background-color: rgba(231, 76, 60, 0.15);
-    color: #c0392b;
+    background-color: #f8d7da;
+    color: #721c24;
+}
+
+.status-unknown {
+    background-color: #fff3cd;
+    color: #856404;
+}
+
+/* 行状态样式 */
+.alive-row {
+    background-color: rgba(212, 237, 218, 0.2);
+}
+
+.unreachable-row {
+    background-color: rgba(248, 215, 218, 0.2);
+}
+
+.highlight-row {
+    background-color: rgba(255, 243, 205, 0.3);
 }
 
 /* 响应式调整 */
-@media (max-width: 768px) {
+@media (max-width: 1024px) {
     .dashboard-grid {
         grid-template-columns: 1fr;
     }
     
-    .node-info {
-        flex-direction: column;
-        gap: 8px;
-    }
-    
-    header {
-        flex-direction: column;
-        align-items: flex-start;
-        gap: 15px;
+    .card.important {
+        grid-column: span 1;
     }
 }
 
@@ -274,11 +287,6 @@ footer {
     display: inline-block;
 }
 
-/* 表格内容高亮 */
-.highlight-row {
-    background-color: rgba(243, 156, 18, 0.1) !important;
-}
-
 /* 更好的表格行交替色 */
 tbody tr:nth-child(even) {
     background-color: rgba(0, 0, 0, 0.01);
@@ -301,4 +309,20 @@ tbody tr:nth-child(even) {
 
 .updating {
     animation: pulse 1.5s infinite;
+}
+
+/* 重要卡片样式 */
+.card.important {
+    border-left: 4px solid #1e88e5;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+}
+
+/* 卡片计数器 */
+.counter {
+    background-color: #007bff;
+    color: white;
+    border-radius: 50%;
+    padding: 2px 8px;
+    font-size: 0.8rem;
+    margin-left: 8px;
 } 

@@ -14,12 +14,22 @@ def start_socket_server(self_id, self_ip, port):
         try:
             server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            server_socket.bind((self_ip, port))
-            server_socket.listen()
-            logger.info(f"节点 {self_id} 正在 {self_ip}:{port} 上监听连接")
+            
+            # 确保绑定正确的网络接口
+            if self_ip == "127.0.0.1" or self_ip == "localhost":
+                # 本地测试用
+                bind_ip = self_ip
+            else:
+                # 使用0.0.0.0接收所有网络接口的连接
+                bind_ip = "0.0.0.0"
+                
+            logger.info(f"节点 {self_id} 尝试在 {bind_ip}:{port} 上监听连接 (实际IP: {self_ip})")
+            server_socket.bind((bind_ip, port))
+            server_socket.listen(10)  # 增加队列大小
+            logger.info(f"节点 {self_id} 成功在 {bind_ip}:{port} 上开始监听连接")
 
         except Exception as e:
-            logger.error(f"节点 {self_id} 启动失败：{e}")
+            logger.error(f"节点 {self_id} 启动失败：{str(e)}")
             return
 
         while True:
@@ -29,24 +39,49 @@ def start_socket_server(self_id, self_ip, port):
 
                 def handle_client(sock):
                     try:
-                        data = b""
-                        while b"\n" not in data:
-                            chunk = sock.recv(4096)
-                            if not chunk:
+                        # 设置超时时间，防止连接被无限阻塞
+                        sock.settimeout(30)
+                        buffer = b""
+                        
+                        # 持续接收数据直到连接关闭
+                        while True:
+                            try:
+                                chunk = sock.recv(4096)
+                                if not chunk:  # 连接已关闭
+                                    break
+                                
+                                buffer += chunk
+                                logger.debug(f"接收到数据块: {len(chunk)} 字节，当前缓冲区大小: {len(buffer)} 字节")
+                                
+                                # 处理缓冲区中所有完整的消息
+                                while b"\n" in buffer:
+                                    # 分割第一个完整消息和剩余部分
+                                    msg_bytes, buffer = buffer.split(b"\n", 1)
+                                    
+                                    if msg_bytes:  # 确保不是空消息
+                                        try:
+                                            msg_str = msg_bytes.decode()
+                                            json_data = json.loads(msg_str)
+                                            logger.info(f"接收到消息: 类型={json_data.get('type', 'UNKNOWN')}, 发送者={json_data.get('sender_id', 'UNKNOWN')}")
+                                            dispatch_message(json_data, self_id, self_ip)
+                                        except json.JSONDecodeError:
+                                            logger.warning(f"节点 {self_id} 收到非法JSON：{msg_bytes[:100]}")
+                                        except Exception as e:
+                                            logger.error(f"处理消息时出错: {str(e)}")
+                            
+                            except socket.timeout:
+                                # 超时但连接可能仍然有效，继续尝试接收
+                                continue
+                            except ConnectionResetError:
+                                # 连接被对方重置
+                                logger.warning(f"连接被重置: {addr}")
                                 break
-                            data += chunk
-
-                        messages = data.decode().split("\n")
-                        for msg in messages:
-                            if msg.strip():
-                                try:
-                                    json_data = json.loads(msg)
-                                    dispatch_message(json_data, self_id, self_ip)
-                                except json.JSONDecodeError:
-                                    logger.warning(f"节点 {self_id} 收到非法JSON：{msg[:100]}")
+                            except Exception as e:
+                                logger.error(f"接收数据时出错: {str(e)}")
+                                break
 
                     except Exception as e:
-                        logger.error(f"处理客户端消息失败：{e}")
+                        logger.error(f"处理客户端消息失败：{str(e)}")
                     finally:
                         sock.close()
                         logger.debug(f"关闭与客户端 {addr} 的连接")
@@ -54,6 +89,6 @@ def start_socket_server(self_id, self_ip, port):
                 threading.Thread(target=handle_client, args=(client_socket,), daemon=True).start()
 
             except Exception as e:
-                logger.error(f"接收连接出错：{e}")
+                logger.error(f"接收连接出错：{str(e)}")
 
     threading.Thread(target=listen_loop, daemon=True).start()
