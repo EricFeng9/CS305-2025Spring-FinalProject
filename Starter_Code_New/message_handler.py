@@ -73,9 +73,6 @@ def dispatch_message(msg, self_id, self_ip):
             logger.warning(f"收到无发送者ID的消息: {msg}")
             return
             
-        # 记录接收到的消息
-        from dashboard import log_received_message
-        log_received_message(sender_id, self_id, msg_type, msg)
         
         #  Check if the message has been seen in `seen_message_ids` to prevent replay attacks. 
         # If yes, drop the message and add one to `message_redundancy`. 
@@ -111,7 +108,9 @@ def dispatch_message(msg, self_id, self_ip):
             payload = msg.get("payload", {})
             
             logger.info(f"收到RELAY消息，目标节点: {target_id}, 发送者: {sender_id}")
-            
+            # 记录接收到的消息
+            from dashboard import log_received_message
+            log_received_message(sender_id, self_id, msg_type, msg)
             if target_id == self_id:
                 logger.info(f"本节点是RELAY消息的目标节点，处理payload")
                 if payload:
@@ -131,6 +130,9 @@ def dispatch_message(msg, self_id, self_ip):
         elif msg_type == "HELLO":
             #  Call the function `handle_hello_message` in `peer_discovery.py` to process the message.
             from peer_discovery import handle_hello_message
+            # 记录接收到的消息
+            from dashboard import log_received_message
+            log_received_message(sender_id, self_id, msg_type, msg)
             logger.info(f"收到HELLO消息：发送者={msg.get('sender_id')}, IP={msg.get('ip')}, 端口={msg.get('port')}")
             new_peers = handle_hello_message(msg, self_id)
             if new_peers:
@@ -144,8 +146,11 @@ def dispatch_message(msg, self_id, self_ip):
             # If incorrect, record the sender's offence using the function `record_offence` in `peer_manager.py`.
             from block_handler import handle_block,compute_block_hash
             
-            # 首先获取发送节点的ID，优先使用peer_id，其次使用sender_id
-            block_sender_id = msg.get("peer_id") or sender_id
+            # 首先获取发送节点的ID，使用peer_id
+            block_sender_id = msg.get("peer_id") 
+            # 记录消息
+            from dashboard import log_received_message
+            log_received_message(block_sender_id, self_id, msg_type, msg)
             
             # 验证区块ID是否正确
             computed_hash = compute_block_hash(msg)
@@ -155,14 +160,12 @@ def dispatch_message(msg, self_id, self_ip):
                 record_offense(block_sender_id)
                 logger.warning(f"节点 {block_sender_id} 已记录违规行为，将被加入黑名单")
                 return
-                
+            logger.warning(f"节点 {block_sender_id} 区块id验证通过")
             #  Call the function `handle_block` in `block_handler.py` to process the block.
             # 处理区块
-            logger.info(f"接收到BLOCK消息，区块ID: {block_id}, 发送者: {sender_id}")
+            logger.info(f"接收到BLOCK消息，区块ID: {block_id}, 发送者: {block_sender_id}")
             
-            # 记录消息
-            from dashboard import log_received_message
-            log_received_message(sender_id, self_id, "BLOCK", msg)
+            
             
             handle_block(msg, self_id)
                  
@@ -189,6 +192,9 @@ def dispatch_message(msg, self_id, self_ip):
             # If incorrect, record the sender's offence using the function `record_offence` in `peer_manager.py`.
             # 验证交易ID正确性
             from transaction import compute_tx_hash
+            # 记录消息
+            from dashboard import log_received_message
+            log_received_message(sender_id, self_id, msg_type, msg)
             if compute_tx_hash(msg) != msg["id"]:
                 record_offense(msg["from_peer"])
                 logger.warning(f"来自节点{msg['from_peer']}的transaction消息id验证不通过,丢弃")
@@ -205,7 +211,9 @@ def dispatch_message(msg, self_id, self_ip):
                 gossip_message(self_id, msg)
 
         elif msg_type == "PING":
-            
+            # 记录消息
+            from dashboard import log_received_message
+            log_received_message(sender_id, self_id, msg_type, msg)
             # Update the last ping time using the function `update_peer_heartbeat` in `peer_manager.py`.
             # 更新the last ping time
             from peer_manager import update_peer_heartbeat
@@ -226,7 +234,8 @@ def dispatch_message(msg, self_id, self_ip):
             
 
         elif msg_type == "PONG":
-            
+            from dashboard import log_received_message
+            log_received_message(sender_id, self_id, msg_type, msg)
             # Update the last ping time using the function `update_peer_heartbeat` in `peer_manager.py`.
             from peer_manager import update_peer_heartbeat, handle_pong
             update_peer_heartbeat(sender_id)
@@ -235,6 +244,8 @@ def dispatch_message(msg, self_id, self_ip):
             
 
         elif msg_type == "INV":
+            from dashboard import log_received_message
+            log_received_message(sender_id, self_id, msg_type, msg)
             rsv_block_ids = msg.get("block_ids", [])
             # Read all blocks IDs in the local blockchain 
             # using the function `get_inventory` in `block_handler.py`.
@@ -273,6 +284,8 @@ def dispatch_message(msg, self_id, self_ip):
                     logger.warning(f"收到节点 {sender_id} 的INV消息，但该节点不在已知节点列表中")
 
         elif msg_type == "GETBLOCK":
+            from dashboard import log_received_message
+            log_received_message(sender_id, self_id, msg_type, msg)
         # TODO: Extract the block IDs from the message.
             requested_block_ids = msg.get("requested_ids", [])
         # TODO: Get the blocks from the local blockchain according to the block IDs using the function `get_block_by_id` in `block_handler.py`.
@@ -321,7 +334,8 @@ def dispatch_message(msg, self_id, self_ip):
             # Read all block header in the local blockchain and store them in `headers`.
             # Create a `BLOCK_HEADERS` message, which should include `{message type, sender's ID, headers}`.
             from block_handler import header_store
-            
+            from dashboard import log_received_message
+            log_received_message(sender_id, self_id, msg_type, msg)
             # 创建BLOCK_HEADERS消息
             headers_msg = {
                 "type": "BLOCK_HEADERS",
@@ -338,6 +352,8 @@ def dispatch_message(msg, self_id, self_ip):
                 logger.warning(f"无法发送区块头信息，节点 {sender_id} 不在已知节点列表中")
 
         elif msg_type == "BLOCK_HEADERS":
+            from dashboard import log_received_message
+            log_received_message(sender_id, self_id, msg_type, msg)
             received_headers = msg.get("headers", [])
             from peer_discovery import peer_flags
             from block_handler import header_store, received_blocks

@@ -328,6 +328,8 @@ def send_message(ip, port, message):
         sender_id = "UNKNOWN"
         if isinstance(message, dict) and "sender_id" in message:
             sender_id = message["sender_id"]
+        elif isinstance(message, dict) and "peer_id" in message:
+            sender_id = message["peer_id"]
         else:
             # 尝试从配置中获取当前节点ID
             sender_id = peer_config.get("self_id", "UNKNOWN")
