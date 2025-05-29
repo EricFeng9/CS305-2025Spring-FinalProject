@@ -25,6 +25,7 @@ def main():
     parser.add_argument("--mode", default="normal", help="Node mode: normal or malicious")
     args = parser.parse_args()
     MALICIOUS_MODE = args.mode == 'malicious'
+    print(f"[{args.id}] Running in {'malicious' if MALICIOUS_MODE else 'normal'} mode", flush=True)
 
     self_id = args.id
     str_self_id = str(self_id)  # 确保使用字符串ID

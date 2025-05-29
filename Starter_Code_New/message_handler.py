@@ -61,6 +61,7 @@ def dispatch_message(msg, self_id, self_ip):
     """处理接收到的消息"""
     try:
         msg_type = msg.get("type")
+        print(f"[{self_id}] 收到消息: {msg_type}, 内容: {msg}", flush=True)
         
         # 消息合法性检查
         if not msg_type:
@@ -70,8 +71,7 @@ def dispatch_message(msg, self_id, self_ip):
         # 获取消息发送者
         sender_id = msg.get("sender_id")
         if not sender_id:
-            logger.warning(f"收到无发送者ID的消息: {msg}")
-            return
+            sender_id = msg.get("peer_id")
             
         
         #  Check if the message has been seen in `seen_message_ids` to prevent replay attacks. 
@@ -154,6 +154,7 @@ def dispatch_message(msg, self_id, self_ip):
             
             # 验证区块ID是否正确
             computed_hash = compute_block_hash(msg)
+            logger.warning(f"计算哈希={computed_hash}, 提供哈希={msg['block_id']}")
             if computed_hash != msg["block_id"]:
                 logger.warning(f"来自节点 {block_sender_id} 的区块ID验证失败: 计算哈希={computed_hash}, 提供哈希={msg['block_id']}")
                 # 将节点记录为恶意节点

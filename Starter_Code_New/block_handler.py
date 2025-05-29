@@ -35,10 +35,10 @@ def block_generation(self_id, MALICIOUS_MODE, interval=20):
     # TODO: Create a new block periodically using the function `create_dummy_block`.
             new_block = create_dummy_block(self_id, MALICIOUS_MODE)
     # TODO: Create an `INV` message for the new block using the function `create_inv` in `inv_message.py`.
-            block_ids=[]
-            for block in received_blocks:
-                block_ids.append(block["block_id"])
-            inv_msg=create_inv(self_id, block_ids)
+            # block_ids=[]
+            # for block in received_blocks:
+            #     block_ids.append(block["block_id"])
+            inv_msg=create_inv(self_id, [new_block["block_id"]])
     # TODO: Broadcast the `INV` message to known peers using the function `gossip` in `outbox.py`.
             gossip_message(self_id, inv_msg)
     threading.Thread(target=mine, daemon=True).start()
