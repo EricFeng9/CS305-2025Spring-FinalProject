@@ -48,37 +48,38 @@ dashboard_data = {
 
 
 #--------------------------------------------#
-def start_dashboard(peer_id, port=None):
+def start_dashboard(self_id, port=None):
     global blockchain_data_ref, known_peers_ref, dashboard_data
     from block_handler import received_blocks
-    dashboard_data["peer_id"] = peer_id
+    dashboard_data["peer_id"] = self_id
     blockchain_data_ref = received_blocks
     known_peers_ref = known_peers
     
     # 使用节点ID作为环境变量，使其在模板中可访问
-    os.environ['PEER_ID'] = str(peer_id)
+    os.environ['PEER_ID'] = str(self_id)
     
     # 如果未提供端口，则根据节点ID计算端口
     if port is None:
-        port = 7000 + int(peer_id) % 10000
+        port = 7000 + int(self_id) % 10000
     
     # 打印已知节点
-    print(f"[{peer_id}] Known peers before dashboard start: {known_peers}")
+    print(f"[{self_id}] Known peers before dashboard start: {known_peers}")
+    print(f"[{self_id}] Peer flags before dashboard start: {peer_flags}")
     
     # 启动仪表盘
-    print(f"[{peer_id}] Starting dashboard on port {port}")
+    print(f"[{self_id}] Starting dashboard on port {port}")
     
     # 在新线程中运行Flask应用
     threading.Thread(target=lambda: app.run(host='0.0.0.0', port=port), daemon=True).start()
     
     # 打印节点状态
     ip = os.environ.get('NODE_IP', 'localhost')
-    print(f"[{peer_id}] Node is now running at {ip}:{peer_id}")
+    print(f"[{self_id}] Node is now running at {ip}:{self_id}")
     
     # 每30秒打印一次节点心跳
     def print_heartbeat():
         while True:
-            print(f"[{peer_id}] Still alive at {time.strftime('%H:%M:%S')}")
+            print(f"[{self_id}] Still alive at {time.strftime('%H:%M:%S')}")
             time.sleep(30)
     
     threading.Thread(target=print_heartbeat, daemon=True).start()
@@ -86,7 +87,7 @@ def start_dashboard(peer_id, port=None):
     # 添加以下代码，定期更新仪表盘数据
     def update_data_loop():
         while True:
-            update_dashboard_data(peer_id)
+            update_dashboard_data(self_id)
             time.sleep(5)  # 每5秒更新一次
     
     # 启动更新线程
@@ -414,4 +415,158 @@ def log_received_message(sender_id, receiver_id, msg_type, content):
         message_logs_by_type["other"].append(message)
         if len(message_logs_by_type["other"]) > MAX_MESSAGES_PER_TYPE:
             message_logs_by_type["other"] = message_logs_by_type["other"][-MAX_MESSAGES_PER_TYPE:]
+
+# 节点事件通知函数
+def notify_node_joined(node_id, ip, port, flags):
+    """通知前端有新节点加入"""
+    event = {
+        "type": "node_joined",
+        "node_id": node_id,
+        "ip": ip,
+        "port": port,
+        "flags": flags,
+        "timestamp": time.time()
+    }
+    broadcast_event(event)
+
+def notify_node_left(node_id, reason):
+    """通知前端有节点离开"""
+    event = {
+        "type": "node_left",
+        "node_id": node_id,
+        "reason": reason,
+        "timestamp": time.time()
+    }
+    broadcast_event(event)
+    
+def notify_nodes_discovered(node_ids):
+    """通知前端发现了新节点"""
+    event = {
+        "type": "nodes_discovered",
+        "node_ids": node_ids,
+        "timestamp": time.time()
+    }
+    broadcast_event(event)
+
+# 广播事件到所有连接的客户端
+def broadcast_event(event):
+    """广播事件到所有WebSocket客户端"""
+    import json
+    
+    event_json = json.dumps(event)
+    # 在这里实现向WebSocket客户端发送事件的逻辑
+    # 由于我们的dashboard是基于HTTP的，暂时不实现完整的WebSocket功能
+    logger.info(f"广播事件: {event_json}")
+
+@app.route('/api/nodes/list')
+def list_nodes_api():
+    """处理获取节点列表的请求，保留此API以便仪表盘显示节点状态"""
+    from peer_discovery import known_peers, peer_flags
+    from peer_manager import get_peer_status
+    
+    node_list = []
+    for node_id, (ip, port) in known_peers.items():
+        node_info = {
+            "id": node_id,
+            "ip": ip,
+            "port": port,
+            "flags": peer_flags.get(node_id, {}),
+            "status": get_peer_status().get(node_id, {})
+        }
+        node_list.append(node_info)
+        
+    return jsonify({"nodes": node_list})
+
+@app.route('/api/network/status')
+def network_status_api():
+    """处理获取网络状态的请求，保留此API以便仪表盘显示网络状态"""
+    from peer_discovery import known_peers
+    from block_handler import get_latest_block_height, get_inventory
+    from peer_manager import get_peer_status
+    
+    status = {
+        "node_count": len(known_peers),
+        "active_nodes": sum(1 for node_id, info in get_peer_status().items() if info.get("status") == "ALIVE"),
+        "block_height": get_latest_block_height(),
+        "block_count": len(get_inventory())
+    }
+    
+    return jsonify(status)
+
+@app.route('/api/network/topology')
+def network_topology_api():
+    """处理获取网络拓扑的请求，保留此API以便可视化网络状态"""
+    from peer_discovery import known_peers, reachable_by
+    
+    nodes = []
+    for node_id, (ip, port) in known_peers.items():
+        nodes.append({
+            "id": node_id,
+            "ip": ip,
+            "port": port
+        })
+        
+    links = []
+    for node_id, reachable_nodes in reachable_by.items():
+        for reachable_node in reachable_nodes:
+            links.append({
+                "source": node_id,
+                "target": reachable_node
+            })
+            
+    return jsonify({"nodes": nodes, "links": links})
+
+@app.route('/api/transactions/create', methods=['POST'])
+def create_transaction_api():
+    """处理创建新交易的请求"""
+    try:
+        data = request.json
+        from_peer = data.get("from")
+        to_peer = data.get("to")
+        amount = data.get("amount")
+        
+        if not from_peer or not to_peer or not amount:
+            return jsonify({"success": False, "error": "缺少必要参数"}), 400
+            
+        try:
+            amount = float(amount)
+        except ValueError:
+            return jsonify({"success": False, "error": "金额必须是数字"}), 400
+            
+        if amount <= 0:
+            return jsonify({"success": False, "error": "金额必须大于0"}), 400
+            
+        # 创建交易
+        from transaction import TransactionMessage, add_transaction
+        tx = TransactionMessage(sender=from_peer, receiver=to_peer, amount=amount)
+        
+        # 添加到交易池
+        add_transaction(tx)
+        
+        # 广播交易
+        from outbox import gossip_message
+        gossip_message(from_peer, tx.to_dict())
+        
+        return jsonify({
+            "success": True, 
+            "transaction": {
+                "id": tx.id,
+                "from": tx.sender,
+                "to": tx.receiver,
+                "amount": tx.amount,
+                "timestamp": tx.timestamp
+            }
+        })
+                
+    except Exception as e:
+        logger.error(f"创建交易出错: {e}", exc_info=True)
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@app.route('/api/transactions/list')
+def list_transactions_api():
+    """获取交易池中的交易"""
+    from transaction import get_recent_transactions
+    
+    transactions = get_recent_transactions()
+    return jsonify({"transactions": transactions})
 

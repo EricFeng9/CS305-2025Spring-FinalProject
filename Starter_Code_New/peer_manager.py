@@ -139,21 +139,3 @@ def get_peer_status():
         }
     
     return result
-
-# 新增：定期打印黑名单
-def start_blacklist_monitor():
-    """每秒打印一次黑名单内容"""
-    import threading
-    
-    def print_blacklist_loop():
-        while True:
-            current_blacklist = list(blacklist)
-            print(f"当前黑名单内容: {current_blacklist}")
-            time.sleep(1)  # 每秒打印一次
-    
-    # 启动黑名单监控线程
-    print("启动黑名单监控线程...")
-    threading.Thread(target=print_blacklist_loop, daemon=True).start()
-
-# 在模块导入时自动启动黑名单监控
-start_blacklist_monitor()
