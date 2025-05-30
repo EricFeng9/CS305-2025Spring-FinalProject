@@ -133,9 +133,33 @@ def peers():
 
 @app.route('/transactions')
 def transactions():
-    # display the transactions in the local pool `tx_pool`.
-    # 返回交易池数据
-    return jsonify(dashboard_data["transactions"])
+    """返回交易池数据"""
+    try:
+        # 获取交易数据
+        from transaction import get_recent_transactions
+        tx_data = get_recent_transactions()
+        
+        # 确保返回的是列表，不是其他类型
+        if not isinstance(tx_data, list):
+            logger.warning(f"交易数据格式不是列表: {type(tx_data)}")
+            if isinstance(tx_data, dict):
+                tx_data = [tx_data]  # 如果是单个交易，转为列表
+            else:
+                tx_data = []  # 如果是其他类型，返回空列表
+        
+        # 过滤确保所有项都是字典
+        filtered_data = []
+        for item in tx_data:
+            if isinstance(item, dict):
+                filtered_data.append(item)
+            else:
+                logger.warning(f"交易数据中包含非字典项: {item}")
+        
+        # 返回标准JSON格式
+        return jsonify(filtered_data)
+    except Exception as e:
+        logger.exception(f"获取交易数据时出错: {e}")
+        return jsonify({"error": f"获取交易数据时出错: {str(e)}"}), 500
 
 @app.route('/latency')
 def latency():
@@ -157,11 +181,33 @@ def orphan_blocks():
 
 @app.route('/redundancy')
 def redundancy_stats():
-    # 局部导入
-    from message_handler import get_redundancy_stats
-    # display the number of redundant messages received.
-    # 返回冗余消息统计
-    return jsonify(dashboard_data["redundancy"])
+    """返回冗余消息统计信息"""
+    try:
+        # 局部导入
+        from message_handler import get_redundancy_stats
+        # 获取冗余消息统计
+        redundancy_data = get_redundancy_stats()
+        
+        # 确保返回的是dict，不是其他类型
+        if not isinstance(redundancy_data, dict):
+            logger.warning(f"冗余消息数据格式不是dict: {type(redundancy_data)}")
+            redundancy_data = {}
+            
+        # 过滤确保所有值都是数字
+        filtered_data = {}
+        for key, value in redundancy_data.items():
+            try:
+                # 确保键是字符串，值是数字
+                filtered_data[str(key)] = int(value)
+            except (ValueError, TypeError) as e:
+                logger.warning(f"冗余消息数据中包含无效值: {key}={value}, 错误: {e}")
+                
+        # 返回标准JSON格式
+        return jsonify(filtered_data)
+    except Exception as e:
+        logger.exception(f"获取冗余消息统计时出错: {e}")
+        return jsonify({"error": f"获取冗余消息统计时出错: {str(e)}"}), 500
+
 #--------------------------------------------#
 
 #------以下为额外添加内容-------

@@ -3,7 +3,7 @@ import json
 from utils import generate_message_id
 from outbox import gossip_message
 from block_handler import received_blocks
-from peer_discovery import known_peers
+from peer_discovery import known_peers, peer_flags
 
 def create_inv(sender_id, block_ids):
     # TODO: * Define the JSON format of an `INV` message, which should include `{message type, sender's ID, sending blocks' IDs, message ID}`.
@@ -25,6 +25,15 @@ def get_inventory():
 
 def broadcast_inventory(self_id):
     # TODO: Create an `INV` message with all block IDs in the local blockchain.
+    # 检查是否是轻量级节点，轻量级节点不应生成区块
+    from peer_discovery import peer_flags
+    
+    if self_id in peer_flags and peer_flags[self_id].get("light", False):
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info(f"[{self_id}] 轻量级节点不广播区块清单")
+        return
+        
     block_ids = get_inventory()
     
     if not block_ids:

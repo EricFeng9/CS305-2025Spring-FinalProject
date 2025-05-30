@@ -572,4 +572,40 @@ td .truncate-text {
 .result-message.loading {
     background-color: #e2e3e5;
     color: #383d41;
+}
+
+/* 标签页上的计数器样式 */
+.tab .counter {
+    display: inline-block;
+    background-color: rgba(52, 152, 219, 0.1);
+    color: var(--primary-color);
+    font-size: 0.7rem;
+    padding: 1px 6px;
+    border-radius: 10px;
+    margin-left: 5px;
+    min-width: 16px;
+    text-align: center;
+}
+
+.tab.active .counter {
+    background-color: rgba(255, 255, 255, 0.3);
+    color: white;
+}
+
+/* 优化冗余消息表格样式 */
+#redundancy-table .blockchain-id {
+    max-width: 150px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    display: inline-block;
+}
+
+/* 高亮显示重复次数较多的消息 */
+#redundancy-table tr td:last-child {
+    font-weight: bold;
+}
+
+#redundancy-table tr.highlight-row td:last-child {
+    color: var(--danger-color);
 } 

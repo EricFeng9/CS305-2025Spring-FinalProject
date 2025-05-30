@@ -5,6 +5,7 @@ import random
 import threading
 from peer_discovery import known_peers
 from outbox import gossip_message
+from utils import generate_message_id
 
 class TransactionMessage:
     #initialize
@@ -15,6 +16,7 @@ class TransactionMessage:
         self.amount = amount     #amount of money to transfer
         self.timestamp = timestamp if timestamp else time.time()    #current timestamp
         self.id = self.compute_hash()   #compute hash of the transaction
+        self.message_id = generate_message_id()  # 添加message_id字段
 
     def compute_hash(self):
         tx_data = {
@@ -34,17 +36,22 @@ class TransactionMessage:
             "from": self.from_peer,
             "to": self.to_peer,
             "amount": self.amount,
-            "timestamp": self.timestamp
+            "timestamp": self.timestamp,
+            "message_id": self.message_id  # 添加message_id到字典
         }
 
     @staticmethod
     def from_dict(data):
-        return TransactionMessage(
+        tx = TransactionMessage(
             sender=data["from"],
             receiver=data["to"],
             amount=data["amount"],
             timestamp=data["timestamp"]
         )
+        # 保留原始message_id（如果存在）
+        if "message_id" in data:
+            tx.message_id = data["message_id"]
+        return tx
     
 tx_pool = [] # local transaction pool
 tx_ids = set() # the set of IDs of transactions in the local pool

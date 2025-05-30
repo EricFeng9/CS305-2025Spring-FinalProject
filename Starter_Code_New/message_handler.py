@@ -88,6 +88,7 @@ def dispatch_message(msg, self_id, self_ip):
         current_time = time.time()
         if msg_id in seen_message_ids:
                 if current_time - seen_message_ids[msg_id] < SEEN_EXPIRY_SECONDS:
+                    logger.warning(f"收到来自节点 {sender_id} 的重复消息，类型为{msg_type}，丢弃")
                     message_redundancy[msg_id] = message_redundancy.get(msg_id, 0) + 1
                     drop_stats["DUPLICATE"] += 1
                     return
@@ -551,9 +552,18 @@ def dispatch_message(msg, self_id, self_ip):
                     handle_block(block, self_id)
                     processed_count += 1
                 except Exception as e:
-                    logger.error(f"处理批量区块时出错: {e}", exc_info=True)
-                    
-            logger.info(f"成功处理批量区块: {processed_count}/{len(batch_blocks)}")
+                    logger.error(f"处理批量区块时出错: {e}")
+            
+            logger.info(f"成功处理 {processed_count}/{len(batch_blocks)} 个批量区块")
+            
+            # 尝试更新区块同步状态
+            try:
+                from block_handler import update_block_sync_status
+                if 'update_block_sync_status' in globals():
+                    update_block_sync_status()
+                    logger.info("批量区块处理后，更新了区块同步状态")
+            except Exception as e:
+                logger.error(f"更新区块同步状态失败: {e}")
             
             # 如果还有更多区块需要同步，继续请求
             if has_more and next_height > 0:

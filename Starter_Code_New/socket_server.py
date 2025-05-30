@@ -62,7 +62,10 @@ def start_socket_server(self_id, self_ip, port):
                                         try:
                                             msg_str = msg_bytes.decode()
                                             json_data = json.loads(msg_str)
-                                            logger.info(f"接收到消息: 类型={json_data.get('type', 'UNKNOWN')}, 发送者={json_data.get('sender_id', 'UNKNOWN')}")
+                                            sender_id = json_data.get('sender_id')
+                                            if not sender_id:
+                                                sender_id = json_data.get('peer_id')
+                                            logger.info(f"接收到消息: 类型={json_data.get('type', 'UNKNOWN')}, 发送者={sender_id}")
                                             dispatch_message(json_data, self_id, self_ip)
                                         except json.JSONDecodeError:
                                             logger.warning(f"节点 {self_id} 收到非法JSON：{msg_bytes[:100]}")

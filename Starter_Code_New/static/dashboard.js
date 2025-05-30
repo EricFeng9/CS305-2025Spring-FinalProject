@@ -1,6 +1,103 @@
 // 仪表盘数据刷新周期(毫秒)
 const REFRESH_INTERVAL = 5000;
 
+// 数据处理中间层，统一处理API返回的各种格式
+const DataAdapter = {
+    // 处理API响应，确保始终返回有效的JSON对象
+    processResponse: function(response) {
+        return response.text().then(text => {
+            console.log('原始响应数据:', text);
+            try {
+                if (!text || text.trim() === '') {
+                    console.warn('响应为空');
+                    return null;
+                }
+                
+                // 尝试作为JSON解析
+                const json = JSON.parse(text);
+                return json;
+            } catch (e) {
+                console.error('解析响应数据失败:', e);
+                console.log('无法解析的原始数据:', text);
+                
+                // 针对一些常见的API错误，返回有意义的默认值
+                if (text.includes('Error') || text.includes('error')) {
+                    return { error: text };
+                }
+                
+                return {}; // 返回空对象而不是文本，便于后续处理
+            }
+        });
+    },
+    
+    // 处理冗余消息数据
+    processRedundancyData: function(data) {
+        if (!data) return {};
+        
+        if (typeof data === 'string') {
+            try {
+                data = JSON.parse(data);
+            } catch (e) {
+                console.error('解析冗余消息数据失败:', e);
+                return {};
+            }
+        }
+        
+        if (typeof data !== 'object') {
+            console.error('冗余消息数据不是对象格式:', data);
+            return {};
+        }
+        
+        // 过滤掉非数字值
+        const cleanData = {};
+        for (const [key, value] of Object.entries(data)) {
+            if (typeof value === 'number') {
+                cleanData[key] = value;
+            } else {
+                console.warn(`冗余消息中存在非数字值: key=${key}, value=${value}`);
+            }
+        }
+        
+        return cleanData;
+    },
+    
+    // 处理交易数据
+    processTransactionData: function(data) {
+        if (!data) return [];
+        
+        if (typeof data === 'string') {
+            try {
+                data = JSON.parse(data);
+            } catch (e) {
+                console.error('解析交易数据失败:', e);
+                return [];
+            }
+        }
+        
+        // 处理各种可能的数据格式
+        if (Array.isArray(data)) {
+            return data.filter(item => item && typeof item === 'object');
+        } else if (data && typeof data === 'object') {
+            // 如果是对象，尝试提取有用的数据
+            if (data.error) {
+                console.error('交易数据包含错误:', data.error);
+                return [];
+            }
+            
+            // 如果是对象但非数组，尝试转为数组
+            if (Object.keys(data).length > 0) {
+                const values = Object.values(data);
+                if (values.length > 0 && typeof values[0] === 'object') {
+                    return values;
+                }
+            }
+        }
+        
+        console.warn('无法处理的交易数据格式:', data);
+        return [];
+    }
+};
+
 // 页面加载完成后初始化
 document.addEventListener('DOMContentLoaded', () => {
     // 测试JS是否成功加载
@@ -24,12 +121,159 @@ document.addEventListener('DOMContentLoaded', () => {
     // 初始化发送区块模态框
     initSendBlockModal();
     
+    // 调试UI元素
+    debugUIElements();
+    
+    // 测试API
+    testAPIs();
+    
     // 首次加载数据
     refreshAllData();
     
     // 设置定时刷新
     setInterval(refreshAllData, REFRESH_INTERVAL);
 });
+
+// 调试UI元素，确保标签页正确设置
+function debugUIElements() {
+    // 检查网络监控面板标签页
+    const networkTabs = document.querySelectorAll('#network-monitor-section .tab');
+    console.log(`找到 ${networkTabs.length} 个网络监控标签页`);
+    
+    // 检查冗余消息标签页
+    const redundancyTab = document.querySelector('.tab[data-target="redundancy-panel"]');
+    if (redundancyTab) {
+        console.log('找到冗余消息标签页');
+        
+        // 检查冗余消息面板
+        const redundancyPanel = document.getElementById('redundancy-panel');
+        if (redundancyPanel) {
+            console.log('找到冗余消息面板');
+        } else {
+            console.error('未找到冗余消息面板');
+        }
+        
+        // 检查冗余消息表格
+        const redundancyTable = document.getElementById('redundancy-table');
+        if (redundancyTable) {
+            console.log('找到冗余消息表格');
+        } else {
+            console.error('未找到冗余消息表格');
+        }
+    } else {
+        console.error('未找到冗余消息标签页');
+    }
+}
+
+// 添加一个更强大的API诊断工具
+function checkAPIStatus() {
+    console.group('API诊断');
+    console.log('开始诊断API状态...');
+    
+    // 检查各API状态的函数
+    function checkAPI(url, name) {
+        console.log(`测试${name} API (${url})...`);
+        return fetch(url)
+            .then(response => {
+                if (!response.ok) {
+                    console.error(`${name} API返回错误状态码: ${response.status}`);
+                    return { status: 'error', code: response.status };
+                }
+                return response.text().then(text => {
+                    try {
+                        let data = text;
+                        try {
+                            // 尝试解析为JSON
+                            data = JSON.parse(text);
+                        } catch (e) {
+                            console.warn(`${name} API返回的不是有效JSON: ${text.substring(0, 100)}...`);
+                        }
+                        
+                        console.log(`${name} API正常，返回数据:`, data);
+                        return { status: 'ok', data };
+                    } catch (e) {
+                        console.error(`处理${name} API响应时出错:`, e);
+                        return { status: 'error', error: e.message };
+                    }
+                });
+            })
+            .catch(error => {
+                console.error(`${name} API请求失败:`, error);
+                return { status: 'error', error: error.message };
+            });
+    }
+    
+    // 创建诊断任务数组
+    const tasks = [
+        checkAPI('/redundancy', '冗余消息'),
+        checkAPI('/transactions', '交易信息'),
+        checkAPI('/blocks', '区块信息'),
+        checkAPI('/peers', '节点信息')
+    ];
+    
+    // 执行所有诊断任务
+    Promise.all(tasks)
+        .then(results => {
+            console.log('API诊断完成:');
+            const statusTable = {
+                '/redundancy': results[0].status,
+                '/transactions': results[1].status,
+                '/blocks': results[2].status,
+                '/peers': results[3].status
+            };
+            console.table(statusTable);
+            console.groupEnd();
+        })
+        .catch(error => {
+            console.error('API诊断出错:', error);
+            console.groupEnd();
+        });
+}
+
+// 修改testAPIs函数以使用新的API诊断工具
+function testAPIs() {
+    console.log("开始测试API...");
+    checkAPIStatus();
+}
+
+// 添加手动强制更新方法
+window.forceRefresh = function() {
+    console.log("手动强制刷新所有数据...");
+    refreshAllData();
+    return "刷新命令已发送，检查控制台查看详情";
+};
+
+// 添加修复工具，可以在控制台中调用
+window.fixUI = function() {
+    console.log("修复UI元素...");
+    
+    // 确保所有面板存在
+    const panels = ['transactions-panel', 'orphan-blocks-panel', 'network-stats-panel', 'redundancy-panel'];
+    panels.forEach(panelId => {
+        const panel = document.getElementById(panelId);
+        if (!panel) {
+            console.error(`找不到面板: #${panelId}`);
+        } else {
+            console.log(`面板 #${panelId} 已找到`);
+            // 确保表格存在
+            if (panelId === 'transactions-panel') {
+                const table = panel.querySelector('#transactions-table');
+                if (!table) {
+                    console.error(`找不到交易表格 #transactions-table`);
+                }
+            } else if (panelId === 'redundancy-panel') {
+                const table = panel.querySelector('#redundancy-table');
+                if (!table) {
+                    console.error(`找不到冗余消息表格 #redundancy-table`);
+                }
+            }
+        }
+    });
+    
+    // 重新刷新数据
+    refreshAllData();
+    return "UI修复完成，检查控制台查看详情";
+};
 
 // 初始化发送区块模态框
 function initSendBlockModal() {
@@ -126,10 +370,26 @@ function initTabPanels() {
                 
                 // 设置当前标签和面板为活动状态
                 tab.classList.add('active');
+                
+                // 获取目标面板ID（如果有data-target属性）
+                const targetId = tab.getAttribute('data-target');
+                if (targetId) {
+                    // 根据目标ID查找面板并激活
+                    const targetPanel = container.querySelector(`#${targetId}`);
+                    if (targetPanel) {
+                        targetPanel.classList.add('active');
+                        return;
+                    }
+                }
+                
+                // 如果没有data-target或找不到目标面板，则按索引激活
                 if(panels[index]) panels[index].classList.add('active');
             });
         });
     });
+    
+    // 调试信息
+    console.log('标签面板初始化完成');
 }
 
 // 刷新所有数据
@@ -356,36 +616,85 @@ function fetchOrphanBlocks() {
 // 获取交易信息
 function fetchTransactions() {
     return fetch('/transactions')
-        .then(response => response.json())
+        .then(response => DataAdapter.processResponse(response))
         .then(data => {
             const tableBody = document.getElementById('transactions-table');
-            tableBody.innerHTML = '';
-            const section = document.getElementById('transactions-section');
-            
-            if (data.length === 0) {
-                section.classList.add('empty');
-                tableBody.innerHTML = '<tr><td colspan="5" class="empty-state">没有交易</td></tr>';
+            if (!tableBody) {
+                console.error('找不到交易表格(#transactions-table)');
                 return;
             }
             
-            section.classList.remove('empty');
+            tableBody.innerHTML = '';
             
-            // 更新交易数量
-            updateCounter('transactions-section', data.length);
+            // 取得正确的交易面板元素
+            const panel = document.getElementById('transactions-panel');
             
-            data.forEach(tx => {
-                const row = document.createElement('tr');
-                row.innerHTML = `
-                    <td><span class="blockchain-id" title="${tx.id || '未知'}">${truncateId(tx.id || '未知')}</span></td>
-                    <td><span class="blockchain-id" title="${tx.from || tx.from_peer || '未知'}">${truncateId(tx.from || tx.from_peer || '未知', 10)}</span></td>
-                    <td><span class="blockchain-id" title="${tx.to || tx.to_peer || '未知'}">${truncateId(tx.to || tx.to_peer || '未知', 10)}</span></td>
-                    <td>${tx.amount || '未知'}</td>
-                    <td>${formatTimestamp(tx.timestamp)}</td>
-                `;
-                tableBody.appendChild(row);
-            });
+            console.log("解析后交易数据:", data);
+            
+            try {
+                // 通过DataAdapter处理交易数据
+                data = DataAdapter.processTransactionData(data);
+                
+                if (data.length === 0) {
+                    if (panel) {
+                        panel.classList.add('empty');
+                    }
+                    tableBody.innerHTML = '<tr><td colspan="5" class="empty-state">没有交易</td></tr>';
+                    return;
+                }
+                
+                if (panel) {
+                    panel.classList.remove('empty');
+                }
+                
+                // 更新交易数量 - 使用相应的标签
+                const networkMonitor = document.getElementById('network-monitor-section');
+                if (networkMonitor) {
+                    const tabElement = networkMonitor.querySelector('.tab[data-target="transactions-panel"]');
+                    if (tabElement) {
+                        let counter = tabElement.querySelector('.counter');
+                        if (!counter) {
+                            counter = document.createElement('span');
+                            counter.className = 'counter';
+                            tabElement.appendChild(counter);
+                        }
+                        counter.textContent = data.length;
+                    }
+                }
+                
+                data.forEach(tx => {
+                    console.log("处理交易:", tx);
+                    const row = document.createElement('tr');
+                    
+                    // 统一处理不同格式的交易数据
+                    // 从screenshots看，交易数据的格式为 {amount, from, to, id, timestamp, type} 
+                    const txId = tx.id || '';
+                    const fromPeer = tx.from || tx.from_peer || '';
+                    const toPeer = tx.to || tx.to_peer || '';
+                    const amount = tx.amount || '未知';
+                    const timestamp = tx.timestamp || '';
+                    
+                    row.innerHTML = `
+                        <td><span class="blockchain-id" title="${txId}">${truncateId(txId || '未知')}</span></td>
+                        <td><span class="blockchain-id" title="${fromPeer}">${truncateId(fromPeer || '未知', 10)}</span></td>
+                        <td><span class="blockchain-id" title="${toPeer}">${truncateId(toPeer || '未知', 10)}</span></td>
+                        <td>${amount}</td>
+                        <td>${formatTimestamp(timestamp)}</td>
+                    `;
+                    tableBody.appendChild(row);
+                });
+            } catch (e) {
+                console.error("处理交易数据出错:", e);
+                tableBody.innerHTML = `<tr><td colspan="5" class="empty-state">处理交易数据出错: ${e.message}</td></tr>`;
+            }
         })
-        .catch(error => console.error('获取交易信息失败:', error));
+        .catch(error => {
+            console.error('获取交易信息失败:', error);
+            const tableBody = document.getElementById('transactions-table');
+            if (tableBody) {
+                tableBody.innerHTML = `<tr><td colspan="5" class="empty-state">获取交易信息失败: ${error.message}</td></tr>`;
+            }
+        });
 }
 
 // 获取容量信息
@@ -401,41 +710,105 @@ function fetchCapacity() {
 // 获取冗余信息
 function fetchRedundancy() {
     return fetch('/redundancy')
-        .then(response => response.json())
+        .then(response => DataAdapter.processResponse(response))
         .then(data => {
             const tableBody = document.getElementById('redundancy-table');
-            tableBody.innerHTML = '';
-            const section = document.getElementById('redundancy-section');
-            
-            if (Object.keys(data).length === 0) {
-                section.classList.add('empty');
-                tableBody.innerHTML = '<tr><td colspan="2" class="empty-state">没有冗余消息</td></tr>';
+            if (!tableBody) {
+                console.error('找不到冗余消息表格(#redundancy-table)');
                 return;
             }
             
-            section.classList.remove('empty');
+            tableBody.innerHTML = '';
             
-            // 更新消息数量
-            updateCounter('redundancy-section', Object.keys(data).length);
+            // 修正：使用正确的选择器，从网络监控面板中查找对应的面板
+            const panel = document.getElementById('redundancy-panel');
             
-            // 按重复次数排序
-            const sortedMessages = Object.entries(data).sort((a, b) => b[1] - a[1]);
+            console.log("冗余消息解析数据:", data); // 添加调试日志
             
-            sortedMessages.forEach(([msgId, count]) => {
-                const row = document.createElement('tr');
-                // 高亮显示高重复次数
-                if (count > 3) {
-                    row.classList.add('highlight-row');
+            try {
+                // 通过DataAdapter处理数据
+                data = DataAdapter.processRedundancyData(data);
+                
+                // 检查是否有冗余消息
+                if (Object.keys(data).length === 0) {
+                    if (panel) {
+                        panel.classList.add('empty');
+                    }
+                    tableBody.innerHTML = '<tr><td colspan="2" class="empty-state">没有冗余消息</td></tr>';
+                    return;
                 }
                 
-                row.innerHTML = `
-                    <td><span class="blockchain-id" title="${msgId}">${truncateId(msgId, 20)}</span></td>
-                    <td>${count}</td>
-                `;
-                tableBody.appendChild(row);
-            });
+                if (panel) {
+                    panel.classList.remove('empty');
+                }
+                
+                // 更新消息数量 - 使用网络监控面板标题
+                const networkMonitor = document.getElementById('network-monitor-section');
+                if (networkMonitor) {
+                    const tabElement = networkMonitor.querySelector('.tab[data-target="redundancy-panel"]');
+                    if (tabElement) {
+                        let counter = tabElement.querySelector('.counter');
+                        if (!counter) {
+                            counter = document.createElement('span');
+                            counter.className = 'counter';
+                            tabElement.appendChild(counter);
+                        }
+                        counter.textContent = Object.keys(data).length;
+                    }
+                }
+                
+                // 按重复次数排序
+                const sortedMessages = Object.entries(data).sort((a, b) => b[1] - a[1]);
+                
+                sortedMessages.forEach(([msgId, count]) => {
+                    const row = document.createElement('tr');
+                    // 高亮显示高重复次数
+                    if (count > 3) {
+                        row.classList.add('highlight-row');
+                    }
+                    
+                    row.innerHTML = `
+                        <td><span class="blockchain-id" title="${msgId}">${truncateId(msgId, 20)}</span></td>
+                        <td>${count}</td>
+                    `;
+                    tableBody.appendChild(row);
+                });
+                
+                // 如果有冗余消息且数量大于5，自动显示冗余消息标签页
+                if (sortedMessages.length > 5) {
+                    // 获取冗余消息标签并激活
+                    const redundancyTab = document.querySelector('.tab[data-target="redundancy-panel"]');
+                    if (redundancyTab) {
+                        const tabContainer = redundancyTab.closest('.tab-container');
+                        if (tabContainer) {
+                            const allTabs = tabContainer.querySelectorAll('.tab');
+                            const allPanels = tabContainer.querySelectorAll('.tab-panel');
+                            
+                            // 移除所有活动状态
+                            allTabs.forEach(t => t.classList.remove('active'));
+                            allPanels.forEach(p => p.classList.remove('active'));
+                            
+                            // 激活冗余消息标签和面板
+                            redundancyTab.classList.add('active');
+                            const redundancyPanel = document.getElementById('redundancy-panel');
+                            if (redundancyPanel) {
+                                redundancyPanel.classList.add('active');
+                            }
+                        }
+                    }
+                }
+            } catch (e) {
+                console.error("处理冗余消息数据出错:", e);
+                tableBody.innerHTML = `<tr><td colspan="2" class="empty-state">处理数据出错: ${e.message}</td></tr>`;
+            }
         })
-        .catch(error => console.error('获取冗余信息失败:', error));
+        .catch(error => {
+            console.error('获取冗余信息失败:', error);
+            const tableBody = document.getElementById('redundancy-table');
+            if (tableBody) {
+                tableBody.innerHTML = `<tr><td colspan="2" class="empty-state">获取冗余消息失败: ${error.message}</td></tr>`;
+            }
+        });
 }
 
 // 获取黑名单信息（合并）
@@ -743,10 +1116,39 @@ function getMessageTypeName(tableId) {
 // 更新卡片标题中的计数器
 function updateCounter(sectionId, count) {
     const section = document.getElementById(sectionId);
-    if (!section) return;
+    if (!section) {
+        console.warn(`未找到ID为${sectionId}的区域`);
+        return;
+    }
     
+    // 特殊处理：冗余消息标签在网络监控面板下
+    if (sectionId === 'redundancy-section') {
+        const networkSection = document.getElementById('network-monitor-section');
+        if (networkSection) {
+            const tabContainer = networkSection.querySelector('.tab-container');
+            if (tabContainer) {
+                const redundancyTab = tabContainer.querySelector('.tab[data-target="redundancy-panel"]');
+                if (redundancyTab) {
+                    // 检查是否存在计数器
+                    let counter = redundancyTab.querySelector('.counter');
+                    if (!counter) {
+                        counter = document.createElement('span');
+                        counter.className = 'counter';
+                        redundancyTab.appendChild(counter);
+                    }
+                    counter.textContent = count;
+                    return;
+                }
+            }
+        }
+    }
+    
+    // 标准处理：直接在标题中添加计数器
     const title = section.querySelector('h2');
-    if (!title) return;
+    if (!title) {
+        console.warn(`未在${sectionId}中找到h2标题元素`);
+        return;
+    }
     
     // 查找或创建计数器元素
     let counter = title.querySelector('.counter');

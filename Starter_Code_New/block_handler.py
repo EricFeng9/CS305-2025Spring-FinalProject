@@ -5,7 +5,7 @@ import threading
 import random
 import logging
 from transaction import get_recent_transactions, clear_pool
-from peer_discovery import known_peers, peer_config
+from peer_discovery import known_peers, peer_config, peer_flags
 from utils import generate_message_id
 
 from outbox import enqueue_message, gossip_message
@@ -51,19 +51,74 @@ def request_block_sync(self_id, is_new_node=False):
 
 def block_generation(self_id, MALICIOUS_MODE, interval=20):
     from inv_message import create_inv
+    import threading
+    
+    # 添加一个锁用于同步区块生成
+    genesis_lock = threading.Lock()
+    waiting_for_sync = True
+    sync_timeout = 30  # 等待同步的超时时间（秒）
+    
     def mine():
+        nonlocal waiting_for_sync
+        
+        # 等待区块同步完成或超时
+        sync_start_time = time.time()
+        
+        while True:
+            # 如果已经有区块或者等待超时，开始挖矿
+            with genesis_lock:
+                if len(received_blocks) > 0:
+                    # 已经有区块了，不需要等待
+                    waiting_for_sync = False
+                elif time.time() - sync_start_time > sync_timeout:
+                    # 超时了，假设没有其他节点可以同步，可以生成创世区块
+                    logger.info(f"[{self_id}] 区块同步等待超时，准备生成创世区块")
+                    waiting_for_sync = False
+            
+            # 如果不再等待同步，开始正常的区块生成循环
+            if not waiting_for_sync:
+                break
+                
+            # 继续等待
+            time.sleep(2)
+        
+        # 开始正常的区块生成循环
         while True:
             time.sleep(interval)
     # TODO: Create a new block periodically using the function `create_dummy_block`.
-            new_block = create_dummy_block(self_id, MALICIOUS_MODE)
+            #new_block = create_dummy_block(self_id, MALICIOUS_MODE)
     # TODO: Create an `INV` message for the new block using the function `create_inv` in `inv_message.py`.
             # block_ids=[]
             # for block in received_blocks:
             #     block_ids.append(block["block_id"])
-            inv_msg=create_inv(self_id, [new_block["block_id"]])
+            #inv_msg=create_inv(self_id, [new_block["block_id"]])
     # TODO: Broadcast the `INV` message to known peers using the function `gossip` in `outbox.py`.
-            gossip_message(self_id, inv_msg)
+            #gossip_message(self_id, inv_msg)
+            
+            with genesis_lock:
+                # 创建新区块
+                try:
+                    new_block = create_dummy_block(self_id, MALICIOUS_MODE)
+                    # 创建INV消息
+                    inv_msg = create_inv(self_id, [new_block["block_id"]])
+                    # 广播INV消息
+                    gossip_message(self_id, inv_msg)
+                    logger.info(f"[{self_id}] 成功生成并广播新区块: {new_block['block_id']}, 高度: {new_block['height']}")
+                except Exception as e:
+                    logger.error(f"[{self_id}] 区块生成失败: {e}")
+    
     threading.Thread(target=mine, daemon=True).start()
+    
+    # 提供一个更新同步状态的函数，在接收到区块时调用
+    def update_sync_status():
+        nonlocal waiting_for_sync
+        with genesis_lock:
+            if len(received_blocks) > 0:
+                waiting_for_sync = False
+    
+    # 将更新函数添加到全局变量，以便其他函数可以调用
+    global update_block_sync_status
+    update_block_sync_status = update_sync_status
 
 #create a dummy block
 def create_dummy_block(peer_id, MALICIOUS_MODE):
@@ -83,7 +138,8 @@ def create_dummy_block(peer_id, MALICIOUS_MODE):
         "block_id": "",  
         "previous_block_id": received_blocks[-1]["block_id"] if received_blocks else None,
         "height": latest_height + 1,  # 设置区块高度
-        "transactions": []  
+        "transactions": [],
+        "message_id": generate_message_id()  # 添加message_id字段
     }
     # TODO: Read the transactions in the local `tx_pool` using the function `get_recent_transactions` in `transaction.py`.
     transactions = get_recent_transactions()
@@ -124,16 +180,69 @@ def handle_block(msg, self_id):
     #         record_offense(sender_id)
     #     return
     
+    # 检查当前节点是否为轻量级节点
+    is_lightweight = False
+    if self_id in peer_flags and peer_flags[self_id].get("light", False):
+        is_lightweight = True
+    
     # TODO: Check if the block exists in the local blockchain. If yes, drop the block.
     """处理接收到的区块"""
     # 检查区块是否已存在
+    block_exists = False
     for block in received_blocks:
         if block["block_id"] == msg["block_id"]:
-            logger.info("区块已存在于本地区块链中，忽略")
+            logger.info(f"区块 {msg['block_id']} 已存在于本地区块链中，忽略")
             return
+    
+    # 检查是否是创世区块（previous_block_id为None）
+    previous_block_id = msg.get("previous_block_id")
+    if previous_block_id is None:
+        # 如果已经有创世区块了，忽略这个新的创世区块
+        for block in received_blocks:
+            if block.get("previous_block_id") is None:
+                logger.warning(f"忽略重复的创世区块: {msg['block_id']}，本地已有创世区块: {block['block_id']}")
+                return
+    
+    # 轻量级节点只存储区块头，不存储完整区块
+    if is_lightweight:
+        # 创建区块头
+        header = {
+            "block_id": msg["block_id"],
+            "previous_block_id": previous_block_id,
+            "height": msg.get("height", 0)  # 确保有高度信息
+        }
+        
+        # 计算高度（如果消息中没有）
+        if "height" not in msg:
+            if previous_block_id is None:
+                header["height"] = 0  # 创世区块高度为0
+            else:
+                for h in header_store:
+                    if h.get("block_id") == previous_block_id:
+                        header["height"] = h.get("height", 0) + 1
+                        break
+        
+        # 检查区块头是否已存在
+        for h in header_store:
+            if h.get("block_id") == msg["block_id"]:
+                logger.info("区块头已存在于本地存储中，忽略")
+                return
+                
+        # 添加到区块头存储
+        header_store.append(header)
+        logger.info(f"轻量级节点: 区块头 {msg['block_id']} 已添加到存储中，高度: {header['height']}")
+        
+        # 尝试调用更新同步状态函数
+        try:
+            if 'update_block_sync_status' in globals():
+                update_block_sync_status()
+                logger.info("区块同步状态已更新")
+        except Exception as e:
+            logger.error(f"更新区块同步状态失败: {e}")
+            
+        return  # 轻量级节点处理完区块头后直接返回
             
     # 检查区块的前置区块是否存在
-    previous_block_id = msg.get("previous_block_id")
     is_previous_block_exist = False
     
     for block in received_blocks:
@@ -161,6 +270,14 @@ def handle_block(msg, self_id):
             "height": msg.get("height", 0)
         })
         logger.info(f"区块 {msg['block_id']} 已添加到本地区块链中，高度: {msg.get('height')}")
+        
+        # 尝试调用更新同步状态函数
+        try:
+            if 'update_block_sync_status' in globals():
+                update_block_sync_status()
+                logger.info("区块同步状态已更新")
+        except Exception as e:
+            logger.error(f"更新区块同步状态失败: {e}")
 
     else:
         # 如果前置区块不存在，则添加到孤块列表
@@ -193,7 +310,8 @@ def create_getblock(sender_id, requested_ids):
     msg = {
         "type": "GETBLOCK",
         "sender_id": sender_id,
-        "requested_ids": requested_ids
+        "requested_ids": requested_ids,
+        "message_id": generate_message_id()
     }
     return msg
 
