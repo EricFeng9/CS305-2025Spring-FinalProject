@@ -616,3 +616,7 @@ def list_transactions_api():
     transactions = get_recent_transactions()
     return jsonify({"transactions": transactions})
 
+@app.route('/redundancy_total')
+def redundancy_total():
+    from message_handler import total_redundant_message
+    return jsonify({"total_redundant_messages": total_redundant_message})
