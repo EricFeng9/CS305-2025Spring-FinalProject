@@ -272,7 +272,7 @@ def get_relay_peer(self_id, dst_id):
     from peer_manager import rtt_tracker
     from peer_discovery import known_peers, reachable_by
     
-    """为NAT后的节点找到最佳中继节点"""
+    """为NAT节点找到最佳中继节点"""
     # TODO: Find the set of relay candidates reachable from the target peer 
     # in `reachable_by` of `peer_discovery.py`.
     candidate_relays_info = [] # Store (peer_id, ip, port)
