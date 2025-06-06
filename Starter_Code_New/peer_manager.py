@@ -1,9 +1,12 @@
+import logging
 import threading
 import time
 import json
 from collections import defaultdict
 
 from utils import generate_message_id
+logger = logging.getLogger(__name__)
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
 peer_status = {}  # {peer_id: 'ALIVE', 'UNREACHABLE' or 'UNKNOWN'}
 last_ping_time = {}  # {peer_id: timestamp}
@@ -12,6 +15,11 @@ rtt_tracker = {}  # {peer_id: transmission latency}
 PING_INTERVAL = 5  # 每隔 5 秒 ping 一次
 PING_TIMEOUT = 10  # 超过 10 秒无响应就标记 UNREACHABLE
 
+# 新 基础引导节点列表（不会被自动删除）
+BOOTSTRAP_PEER_IDS = set([str(i) for i in range(5000, 5011)])  # 5000-5010为基础引导节点
+
+# 节点删除超时时间（秒）
+NODE_REMOVAL_TIMEOUT = 180  # 3分钟无响应则删除动态节点
 
 # === Check if peers are alive ===
 
@@ -63,7 +71,7 @@ def handle_pong(msg):
     update_peer_heartbeat(sender_id)
 
 
-def start_peer_monitor():
+def start_heartbeat_checker():
     import threading
 
     def loop():
@@ -82,6 +90,14 @@ def start_peer_monitor():
             time.sleep(PING_INTERVAL)
 
     threading.Thread(target=loop, daemon=True).start()
+    logger.info("节点心跳检查器已启动")
+
+
+def start_peer_monitor():
+    """启动节点监控器"""
+    start_heartbeat_checker()
+    start_dead_node_cleaner()  # 添加对新功能的调用
+    logger.info("节点监控器已启动")
 
 
 def update_peer_heartbeat(peer_id):
@@ -139,3 +155,68 @@ def get_peer_status():
         }
     
     return result
+
+def start_dead_node_cleaner():
+    """启动定期清理长时间未响应节点的服务"""
+    from peer_discovery import known_peers, peer_flags
+    import threading
+    import logging
+    import time
+    
+    logger = logging.getLogger(__name__)
+    
+    def cleaner_loop():
+        while True:
+            try:
+                current_time = time.time()
+                nodes_to_remove = []
+                
+                # 检查所有标记为DEAD的节点
+                for peer_id, status in peer_status.items():
+                    # 跳过基础引导节点
+                    if str(peer_id) in BOOTSTRAP_PEER_IDS:
+                        continue
+                        
+                    # 检查是否为长时间未响应的节点
+                    if status == "DEAD" and peer_id in last_ping_time:
+                        dead_time = current_time - last_ping_time[peer_id]
+                        if dead_time > NODE_REMOVAL_TIMEOUT:
+                            nodes_to_remove.append(peer_id)
+                
+                # 删除符合条件的节点
+                for peer_id in nodes_to_remove:
+                    logger.info(f"自动清理长时间未响应的动态节点: {peer_id}")
+                    
+                    # 从各种数据结构中删除节点信息
+                    if peer_id in known_peers:
+                        del known_peers[peer_id]
+                    if peer_id in peer_flags:
+                        del peer_flags[peer_id]
+                    if peer_id in peer_status:
+                        del peer_status[peer_id]
+                    if peer_id in last_ping_time:
+                        del last_ping_time[peer_id]
+                    if peer_id in rtt_tracker:
+                        del rtt_tracker[peer_id]
+                    
+                    # 更新配置文件
+                    from dynamic_node_manager import remove_from_global_config
+                    remove_from_global_config(peer_id)
+                    
+                    # 通知仪表盘
+                    try:
+                        from dashboard import notify_node_left
+                        notify_node_left(peer_id, "timeout_removed")
+                    except ImportError:
+                        pass
+                
+                # 每30秒检查一次
+                time.sleep(30)
+                
+            except Exception as e:
+                logger.error(f"清理未响应节点时出错: {e}")
+                time.sleep(60)  # 出错时等待时间更长
+    
+    # 启动清理线程
+    threading.Thread(target=cleaner_loop, daemon=True).start()
+    logger.info("已启动动态节点自动清理服务")

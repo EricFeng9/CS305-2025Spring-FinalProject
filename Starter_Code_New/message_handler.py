@@ -199,16 +199,17 @@ def dispatch_message(msg, self_id, self_ip):
 
         elif msg_type == "TX":
             tx_id = msg.get("id")
+            logger.info(f"收到来自节点{msg['from']}的transaction消息")
             # Check the correctness of transaction ID. 
             # If incorrect, record the sender's offence using the function `record_offence` in `peer_manager.py`.
             # 验证交易ID正确性
             from transaction import compute_hash as compute_tx_hash
             # 记录消息
             from dashboard import log_received_message
-            log_received_message(sender_id, self_id, msg_type, msg)
+            log_received_message(msg['from'], self_id, msg_type, msg)
             if compute_tx_hash(msg) != msg["id"]:
-                record_offense(msg["from_peer"])
-                logger.warning(f"来自节点{msg['from_peer']}的transaction消息id验证不通过,丢弃")
+                record_offense(msg["from"])
+                logger.warning(f"来自节点{msg['from']}的transaction消息id验证不通过,丢弃")
                 return
             # Add the transaction to `tx_pool` using the function `add_transaction` in `transaction.py`.
             # 添加交易到交易池
